@@ -1,0 +1,38 @@
+[
+  {
+    "id": "KB001",
+    "intent": "delivery_issue",
+    "problem": "Customer has not received their order",
+    "solution": "Open the Orders section, select the order, and check the latest tracking status.",
+    "status": "solved"
+  },
+  {
+    "id": "KB002",
+    "intent": "payment_issue",
+    "problem": "Payment was deducted but the order was not confirmed",
+    "solution": "Check the transaction status. If the payment failed, verify whether the amount was automatically reversed.",
+    "status": "solved"
+  },
+  {
+    "id": "KB003",
+    "intent": "login_issue",
+    "problem": "Customer forgot their account password",
+    "solution": "Select Forgot Password and follow the reset instructions sent to the registered email.",
+    "status": "solved"
+  },
+  {
+    "id": "KB004",
+    "intent": "refund_request",
+    "problem": "Customer has not received their refund",
+    "solution": "Check the refund processing status and the expected bank processing period.",
+    "status": "solved"
+  }
+  ,
+{
+    "id": "KB005",
+    "intent": "delivery_issue",
+    "problem": "Tracking says delivered but customer has not received the package",
+    "solution": "Check whether the package was received by a neighbour, family member, or building security. Verify the delivery confirmation and contact the delivery support team to investigate the missing package.",
+    "status": "solved"
+}
+]

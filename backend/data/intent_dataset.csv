@@ -1,0 +1,446 @@
+text,intent
+I need help because a feature of the product is not working,product_issue
+How can I save a second delivery address in my profile,account_issue
+Please help me: i received a payment confirmation but no order confirmation,payment_issue
+The main feature stopped working after setup,product_issue
+My shipment tracking status has been unchanged for several days What should I do next?,delivery_issue
+My parcel was crushed when it was delivered,delivery_issue
+I need help because please cancel the duplicate order,cancellation_request
+"Tracking says delivered, but nothing reached my address Can you look into this?",delivery_issue
+My account has been suspended,account_issue
+"Support said the refund would be processed, but I have no update",refund_request
+I need help because i was charged twice for one order,payment_issue
+"Hi, can you explain how to add an item to my wishlist",general_enquiry
+My shipment tracking status has been unchanged for several days,delivery_issue
+"The courier marked me unavailable, but I was at home",delivery_issue
+I need to know when my refund will be credited,refund_request
+The amount was deducted but the order is still unpaid This is causing a problem.,payment_issue
+I need to add another address to my account,account_issue
+I want to know the available payment options,general_enquiry
+"Hi, this item does not connect to the device listed as compatible",product_issue
+I am facing this issue: where should I enter a promotional code,general_enquiry
+Could you assist? the tracking page shows an address I never entered,delivery_issue
+I am facing this issue: my UPI payment has been stuck in pending status,payment_issue
+I cannot locate the settings for this feature Please guide me.,general_enquiry
+"Hi, i cannot access my account settings",account_issue
+My payment failed while placing the order,payment_issue
+I would like to know whether students get a discount This is causing a problem.,general_enquiry
+My refund request has been waiting for approval for days,refund_request
+I am facing this issue: the product quality is poor,product_issue
+I want to delete my account,account_issue
+My refund has not reached my bank account,refund_request
+Do you offer student discounts Please guide me.,general_enquiry
+"I clicked the reset link, but it opens an invalid page What should I do next?",login_issue
+"Hi, the save button does not update my registered mobile number",account_issue
+Could you assist? my shipment tracking status has been unchanged for several days,delivery_issue
+The product stops working intermittently,product_issue
+I received only a partial refund,refund_request
+Please help me: the refund status is still pending,refund_request
+Cancel my order before it is shipped This is causing a problem.,cancellation_request
+I am not receiving the login OTP,login_issue
+Please return the money for the order I cancelled Please guide me.,refund_request
+"Hi, is it possible to edit the shipping address after checkout",general_enquiry
+I am facing this issue: the tracking page has not updated,delivery_issue
+The tracking page shows an address I never entered,delivery_issue
+I am facing this issue: i cannot complete payment using net banking,payment_issue
+The package arrived damaged during delivery,delivery_issue
+How do I apply a coupon code,general_enquiry
+"Hi, i want a refund for my cancelled order Please check this for me.",refund_request
+"Hi, i get signed out as soon as I log in",login_issue
+An error appeared on the payment page after I entered my details,payment_issue
+Please help me: the OTP is accepted but login fails with an error,login_issue
+My UPI payment has been stuck in pending status This is causing a problem.,payment_issue
+"Hi, i need to stop the subscription renewal",cancellation_request
+The order is still being processed; is cancellation possible,cancellation_request
+The delivery attempt failed even though I was home,delivery_issue
+Which payment methods do you accept,general_enquiry
+I need help because the checkout timed out just after I confirmed the payment,payment_issue
+Please help me: the device becomes unusually hot during basic operation,product_issue
+The OTP is accepted but login fails with an error,login_issue
+My wallet was charged even though the transaction failed,payment_issue
+The login page rejects my correct username and password,login_issue
+I was promised a refund but got no confirmation,refund_request
+The save button does not update my registered mobile number Can you look into this?,account_issue
+I am facing this issue: my account profile information is incorrect,account_issue
+Only part of my order was delivered,delivery_issue
+"Hi, i want a refund for my cancelled order",refund_request
+"Hi, my wallet was charged even though the transaction failed",payment_issue
+I cannot locate the settings for this feature,general_enquiry
+I see a suspended account message when I open my profile,account_issue
+Can you explain how to add an item to my wishlist Can you look into this?,general_enquiry
+"Please help me: the courier marked me unavailable, but I was at home",delivery_issue
+I need to stop the subscription renewal,cancellation_request
+I want a refund for my cancelled order Can you look into this?,refund_request
+I am facing this issue: the amount was deducted but the order is still unpaid,payment_issue
+The UPI transaction is showing pending Please guide me.,payment_issue
+Please explain the warranty coverage available,general_enquiry
+An accessory that should be included is missing from the box This is causing a problem.,product_issue
+Could you assist? the material and finish are much worse than expected,product_issue
+I need help because please share the rules for returning a product,general_enquiry
+My account was temporarily blocked after I tried signing in,login_issue
+I need help because please tell me how to edit the username on my account,account_issue
+Please help me: the payment did not go through when I tried to place my order,payment_issue
+The website declines my debit card every time I try to pay,payment_issue
+The item does not turn on after unpacking,product_issue
+I want to change the email linked to my account,account_issue
+My saved address disappeared,account_issue
+Please help me: the courier is not contacting me,delivery_issue
+"Hi, the product I received is defective Please check this for me.",product_issue
+"Hi, i want to cancel my order",cancellation_request
+I returned the product and need my money back,refund_request
+My order has not arrived yet Can you look into this?,delivery_issue
+Please help me: the product stops working intermittently,product_issue
+"I am facing this issue: i no longer need this purchase, so please cancel it",cancellation_request
+The refunded amount is lower than what I paid,refund_request
+The product overheats during normal use,product_issue
+I get signed out as soon as I log in,login_issue
+"Please remove a single product from the order, not the whole order",cancellation_request
+Please help me: what is the correct way to reach your support team,general_enquiry
+Is it possible to edit the shipping address after checkout,general_enquiry
+I need help because the model number on the item is not the one I ordered,product_issue
+I am facing this issue: i received the wrong delivery address update,delivery_issue
+The item has physical damage What should I do next?,product_issue
+"The returned item was received, but I have not received the refund",refund_request
+My card payment keeps getting declined,payment_issue
+My order is stuck at the sorting facility,delivery_issue
+Please help me: the login page rejects my correct username and password,login_issue
+"Could you assist? money left my bank account, but the order page still says payment pending",payment_issue
+I need help because the website declines my debit card every time I try to pay,payment_issue
+Could you assist? the returned product passed inspection but no refund was issued,refund_request
+I am facing this issue: what are your business hours,general_enquiry
+Please help me: please cancel the order I placed today Please check this for me.,cancellation_request
+"Hi, my refund destination appears to be incorrect",refund_request
+Could you assist? do you provide a warranty for this product,general_enquiry
+My account profile information is incorrect This is causing a problem.,account_issue
+Do you provide a warranty for this product,general_enquiry
+My account has been suspended What should I do next?,account_issue
+"Tracking says delivered, but nothing reached my address",delivery_issue
+I need help because only part of my order was delivered,delivery_issue
+I am facing this issue: the updated profile details disappear when I refresh,account_issue
+I am facing this issue: cancel my order before it is shipped,cancellation_request
+"Hi, how can I save a second delivery address in my profile",account_issue
+"Could you assist? i clicked the reset link, but it opens an invalid page",login_issue
+I need help because i returned the product and need my money back,refund_request
+Could you assist? my card payment keeps getting declined,payment_issue
+The order is taking too long; cancel it What should I do next?,cancellation_request
+I cannot complete payment using net banking,payment_issue
+I am facing this issue: i am locked out after several login attempts,login_issue
+"Hi, where can I find the feature settings",general_enquiry
+I changed my mind and want to cancel,cancellation_request
+Could you assist? my account login page keeps loading,login_issue
+The product arrived with a missing component Please guide me.,product_issue
+"Hi, i ordered the wrong product by mistake; please cancel it",cancellation_request
+The refund status is still pending Please guide me.,refund_request
+I cannot update my phone number,account_issue
+Could you assist? my account was temporarily blocked after I tried signing in,login_issue
+I need help because the refunded amount is lower than what I paid,refund_request
+The one-time password is not arriving on my phone Can you look into this?,login_issue
+I need help because the product is incompatible with my device,product_issue
+I am facing this issue: please close my account and remove my profile,account_issue
+There is a crack on the product body,product_issue
+"Could you assist? the order has not shipped yet, so I want to stop it",cancellation_request
+The transaction timed out after I paid,payment_issue
+"I need help because the return was accepted, but the refund is still missing",refund_request
+Please help me update my registered email address Please guide me.,account_issue
+I am facing this issue: the password reset link is not working,login_issue
+I keep getting an incorrect password message This is causing a problem.,login_issue
+The updated profile details disappear when I refresh,account_issue
+I need help because the package shows delivered but I did not receive it,delivery_issue
+"Hi, the returned item was received, but I have not received the refund",refund_request
+I am facing this issue: i keep getting an incorrect password message,login_issue
+Please help me: do you offer student discounts,general_enquiry
+"Money left my bank account, but the order page still says payment pending",payment_issue
+Please help me: i changed my mind and want to cancel,cancellation_request
+I am facing this issue: my saved address disappeared,account_issue
+I cannot log in to my account,login_issue
+There are two charges on my statement for the same purchase,payment_issue
+The password reset link is not working This is causing a problem.,login_issue
+Please help me: please return the money for the order I cancelled,refund_request
+"Hi, one item arrived, but the remaining items are missing",delivery_issue
+The order is taking too long; cancel it,cancellation_request
+"Hi, where can I find the feature settings Please check this for me.",general_enquiry
+I am facing this issue: which payment methods do you accept,general_enquiry
+A feature of the product is not working,product_issue
+I want to change my account username,account_issue
+I cannot get past the sign-in screen because it keeps spinning,login_issue
+Please help me: i cannot locate the settings for this feature,general_enquiry
+I need help because can you check why my shipment is taking longer than expected,delivery_issue
+Could you assist? i want to know the available payment options,general_enquiry
+Please help me: the website says my password is incorrect,login_issue
+I received only a partial refund What should I do next?,refund_request
+The product is incompatible with my device,product_issue
+The tracking page has not updated This is causing a problem.,delivery_issue
+I need help because the parcel has been sitting at the same hub for days,delivery_issue
+"Please help me: my order failed, so I need the deducted amount returned",refund_request
+The delivery person has not called before attempting delivery This is causing a problem.,delivery_issue
+"The refund was approved, but the amount is not credited yet What should I do next?",refund_request
+I cannot attend the appointment and need to cancel the booking,cancellation_request
+My order is stuck at the sorting facility What should I do next?,delivery_issue
+The model number on the item is not the one I ordered,product_issue
+The parcel has been sitting at the same hub for days,delivery_issue
+Please help me: an error appeared on the payment page after I entered my details,payment_issue
+Could you assist? the transaction timed out after I paid,payment_issue
+"The returned item was received, but I have not received the refund Can you look into this?",refund_request
+"My order failed, so I need the deducted amount returned",refund_request
+I cannot sign in using Google,login_issue
+Could you assist? my order is stuck at the sorting facility,delivery_issue
+"Hi, i cannot log in to my account Please check this for me.",login_issue
+I want to cancel my service booking,cancellation_request
+I need help because there is a crack on the product body,product_issue
+Could you assist? the order is taking too long; cancel it,cancellation_request
+The website says my password is incorrect Please guide me.,login_issue
+I am facing this issue: i was promised a refund but got no confirmation,refund_request
+My refund request has been waiting for approval for days This is causing a problem.,refund_request
+"Hi, how can I contact customer support",general_enquiry
+I need an update on my delayed shipment,delivery_issue
+Can I cancel an order that is being prepared,cancellation_request
+I want to cancel my order Can you look into this?,cancellation_request
+Could you assist? can I cancel an order that is being prepared,cancellation_request
+What are your business hours,general_enquiry
+"I no longer need this purchase, so please cancel it",cancellation_request
+Please cancel the order I placed today,cancellation_request
+Please help me: i cannot sign in using Google,login_issue
+Please help me: the item does not turn on after unpacking,product_issue
+Please help me: my profile changes are not being saved,account_issue
+"Hi, the main feature stopped working after setup",product_issue
+My profile changes are not being saved,account_issue
+I need help because the refund was sent to the wrong payment method,refund_request
+The checkout timed out just after I confirmed the payment,payment_issue
+"Hi, there are two charges on my statement for the same purchase",payment_issue
+I am facing this issue: i want to cancel my service booking,cancellation_request
+I am facing this issue: the Google sign-in option is not completing authentication,login_issue
+The device becomes unusually hot during basic operation,product_issue
+The refund status is still pending,refund_request
+I need help because the login session expires immediately,login_issue
+Could you assist? i cannot attend the appointment and need to cancel the booking,cancellation_request
+Please help me: please help me update my registered email address Please check this for me.,account_issue
+Could you assist? i received only a partial refund,refund_request
+Please share the rules for returning a product,general_enquiry
+Could you assist? the delivery address I saved is no longer visible,account_issue
+Where should I enter a promotional code,general_enquiry
+Could you assist? i want to change my account username,account_issue
+Do you offer student discounts,general_enquiry
+I keep getting an incorrect password message,login_issue
+Please help me: please help me update my registered email address,account_issue
+The returned product passed inspection but no refund was issued,refund_request
+The password reset link is not working,login_issue
+Please help me: the login page rejects my correct username and password Please check this for me.,login_issue
+My account login page keeps loading What should I do next?,login_issue
+What are your business hours This is causing a problem.,general_enquiry
+The payment did not go through when I tried to place my order,payment_issue
+The product is different from the description,product_issue
+I am facing this issue: my refund request has been waiting for approval for days,refund_request
+It works for a few minutes and then shuts down,product_issue
+Could you assist? i received the wrong product model,product_issue
+Net banking is not working at checkout,payment_issue
+Please refund the amount charged for the failed order,refund_request
+Could you assist? please tell me when customer support is available,general_enquiry
+The product quality is poor,product_issue
+Can you explain how to add an item to my wishlist,general_enquiry
+Can I change my delivery address after ordering,general_enquiry
+Where can I find the feature settings,general_enquiry
+I need help because can I change my delivery address after ordering,general_enquiry
+"Could you assist? support said the refund would be processed, but I have no update",refund_request
+I received the wrong delivery address update,delivery_issue
+Please cancel the upcoming automatic renewal,cancellation_request
+I need help because the wallet balance was deducted but payment failed,payment_issue
+Please help me: the package arrived damaged during delivery,delivery_issue
+I need help because please explain the warranty coverage available,general_enquiry
+"Could you assist? the refund was approved, but the amount is not credited yet",refund_request
+Please help me: the item does not turn on after unpacking Please check this for me.,product_issue
+Please close my account and remove my profile This is causing a problem.,account_issue
+Please help me: i need to know when my refund will be credited,refund_request
+The main feature stopped working after setup Can you look into this?,product_issue
+The Google sign-in option is not completing authentication,login_issue
+I want to change the email linked to my account Can you look into this?,account_issue
+There are two charges on my statement for the same purchase Can you look into this?,payment_issue
+Could you assist? where can I read the return policy,general_enquiry
+I am facing this issue: the delivery person has not called before attempting delivery,delivery_issue
+I am facing this issue: my parcel was crushed when it was delivered,delivery_issue
+The product is different from the description This is causing a problem.,product_issue
+The app does not remember my login,login_issue
+I need help because i am not receiving the login OTP,login_issue
+The UPI transaction is showing pending,payment_issue
+I am facing this issue: the payment succeeded but I did not receive an order number,payment_issue
+The wallet balance was deducted but payment failed,payment_issue
+I get an error after entering the OTP,login_issue
+My refund has not reached my bank account This is causing a problem.,refund_request
+I no longer want the delayed order and would like to cancel,cancellation_request
+The account settings page gives me an error,account_issue
+"Hi, the product overheats during normal use",product_issue
+The courier is not contacting me Please guide me.,delivery_issue
+"Hi, my order has not arrived yet",delivery_issue
+The product I received is defective Can you look into this?,product_issue
+"Hi, i want to change the email linked to my account Please check this for me.",account_issue
+Cancel my order before it is shipped,cancellation_request
+The login session expires immediately,login_issue
+The payment did not go through when I tried to place my order Please guide me.,payment_issue
+I ordered the wrong product by mistake; please cancel it,cancellation_request
+The specifications of the delivered item do not match the listing,product_issue
+My account profile information is incorrect,account_issue
+"Hi, i accidentally placed the same order twice; cancel one of them",cancellation_request
+The amount was deducted but the order is still unpaid,payment_issue
+The name shown in my profile is wrong,account_issue
+How do I use the wishlist,general_enquiry
+I want a refund for my cancelled order,refund_request
+The material and finish are much worse than expected,product_issue
+Please cancel the order I placed today Please guide me.,cancellation_request
+Please help me: the product arrived with a missing component,product_issue
+"Hi, i get an error after entering the OTP",login_issue
+"Hi, my order has not arrived yet Please check this for me.",delivery_issue
+I am facing this issue: an accessory that should be included is missing from the box,product_issue
+"Hi, tracking says delivered, but nothing reached my address",delivery_issue
+My card payment keeps getting declined What should I do next?,payment_issue
+I received a payment confirmation but no order confirmation,payment_issue
+Could you assist? my account has been suspended,account_issue
+The product I received is defective,product_issue
+Please tell me when customer support is available,general_enquiry
+Could you assist? net banking is not working at checkout,payment_issue
+I want to cancel one item from my order,cancellation_request
+This item does not connect to the device listed as compatible,product_issue
+The save button does not update my registered mobile number,account_issue
+Please tell me how to edit the username on my account,account_issue
+The website says my password is incorrect,login_issue
+How can I contact customer support,general_enquiry
+"The return was accepted, but the refund is still missing",refund_request
+The courier is not contacting me,delivery_issue
+I am facing this issue: what is the expected date for my refund,refund_request
+The refund was sent to the wrong payment method,refund_request
+I was charged twice for one order,payment_issue
+The delivery person has not called before attempting delivery,delivery_issue
+I want to cancel my order,cancellation_request
+My UPI payment has been stuck in pending status,payment_issue
+"I clicked the reset link, but it opens an invalid page",login_issue
+My payment failed while placing the order Can you look into this?,payment_issue
+Where can I read the return policy,general_enquiry
+Please help me: please cancel the upcoming automatic renewal,cancellation_request
+The item has physical damage,product_issue
+I need help because i need to add another address to my account,account_issue
+"Please remove a single product from the order, not the whole order This is causing a problem.",cancellation_request
+I received the wrong product model,product_issue
+Could you assist? the specifications of the delivered item do not match the listing,product_issue
+The product arrived with a missing component,product_issue
+I want to delete my account Please guide me.,account_issue
+I would like to know whether students get a discount,general_enquiry
+"Hi, i want to change the email linked to my account",account_issue
+Where can I find the feature settings Can you look into this?,general_enquiry
+I am facing this issue: i would like to know whether students get a discount,general_enquiry
+Please help me: please cancel the order I placed today,cancellation_request
+I need help because i see a suspended account message when I open my profile,account_issue
+"Hi, the product I received is defective",product_issue
+"Hi, the one-time password is not arriving on my phone",login_issue
+"Money left my bank account, but the order page still says payment pending What should I do next?",payment_issue
+Could you assist? the item has physical damage,product_issue
+I cannot log in to my account Can you look into this?,login_issue
+I need help because i selected the wrong item and need to cancel,cancellation_request
+I need help because i cannot update my phone number,account_issue
+I am facing this issue: my refund has not reached my bank account,refund_request
+Please help me: the expected delivery date has passed and I still have not received the parcel,delivery_issue
+"Hi, my payment failed while placing the order",payment_issue
+Please help me: the payment did not go through when I tried to place my order Please check this for me.,payment_issue
+"One item arrived, but the remaining items are missing",delivery_issue
+I am facing this issue: the product is different from the description,product_issue
+The payment succeeded but I did not receive an order number,payment_issue
+Please help me: i want to delete my account,account_issue
+The expected delivery date has passed and I still have not received the parcel Please guide me.,delivery_issue
+I need help because the order is still being processed; is cancellation possible,cancellation_request
+The expected delivery date has passed and I still have not received the parcel,delivery_issue
+I want to cancel one item from my order Please guide me.,cancellation_request
+Please close my account and remove my profile,account_issue
+The item does not turn on after unpacking Please guide me.,product_issue
+Please help me: the UPI transaction is showing pending,payment_issue
+"I am facing this issue: please remove a single product from the order, not the whole order",cancellation_request
+Can you check why my shipment is taking longer than expected,delivery_issue
+Please help me: the account settings page gives me an error,account_issue
+My account login page keeps loading,login_issue
+Please cancel the duplicate order,cancellation_request
+Please tell me when customer support is available What should I do next?,general_enquiry
+What is the expected date for my refund,refund_request
+"The order has not shipped yet, so I want to stop it",cancellation_request
+Please help me: how do I apply a coupon code,general_enquiry
+I need help because i no longer want the delayed order and would like to cancel,cancellation_request
+The specifications of the delivered item do not match the listing What should I do next?,product_issue
+The tracking page has not updated,delivery_issue
+My order has not arrived yet,delivery_issue
+I am locked out after several login attempts,login_issue
+I need help because i have to sign in again every time I reopen the app,login_issue
+Where can I read the return policy What should I do next?,general_enquiry
+Could you assist? the app does not remember my login,login_issue
+I need help because i cannot get past the sign-in screen because it keeps spinning,login_issue
+The package shows delivered but I did not receive it,delivery_issue
+"Hi, my payment failed while placing the order Please check this for me.",payment_issue
+I ordered the wrong product by mistake; please cancel it Can you look into this?,cancellation_request
+I am facing this issue: it works for a few minutes and then shuts down,product_issue
+Please help me update my registered email address,account_issue
+"Hi, the payment gateway showed an error",payment_issue
+Please help me: i want to cancel one item from my order,cancellation_request
+The one-time password is not arriving on my phone,login_issue
+The delivery address I saved is no longer visible,account_issue
+The login page rejects my correct username and password Please guide me.,login_issue
+The name shown in my profile is wrong What should I do next?,account_issue
+"The order has not shipped yet, so I want to stop it What should I do next?",cancellation_request
+Could you assist? the name shown in my profile is wrong,account_issue
+I selected the wrong item and need to cancel,cancellation_request
+Please help me: please return the money for the order I cancelled Please check this for me.,refund_request
+My refund destination appears to be incorrect,refund_request
+"Hi, i cannot log in to my account",login_issue
+I need help because how do I use the wishlist,general_enquiry
+Please help me: the expected delivery date has passed and I still have not received the parcel Please check this for me.,delivery_issue
+What is the correct way to reach your support team,general_enquiry
+Could you assist? i need an update on my delayed shipment,delivery_issue
+I accidentally placed the same order twice; cancel one of them,cancellation_request
+An accessory that should be included is missing from the box,product_issue
+"Hi, please refund the amount charged for the failed order",refund_request
+Please help me: i cannot locate the settings for this feature Please check this for me.,general_enquiry
+The payment gateway showed an error,payment_issue
+I have to sign in again every time I reopen the app,login_issue
+"Hi, the delivery attempt failed even though I was home",delivery_issue
+"The refund was approved, but the amount is not credited yet",refund_request
+I cannot access my account settings,account_issue
+"Hi, i want to cancel my order Please check this for me.",cancellation_request
+Please return the money for the order I cancelled,refund_request
+My parcel is still not delivered.,delivery_issue
+The delivery date has passed but my order is missing.,delivery_issue
+Why is my shipment taking so long?,delivery_issue
+My package is stuck in transit.,delivery_issue
+The tracking information has not changed.,delivery_issue
+I have not received my order yet.,delivery_issue
+The courier has not delivered my parcel.,delivery_issue
+My order shows delivered but I never received it.,delivery_issue
+Where is my package? It is overdue.,delivery_issue
+The delivery person did not come to my address.,delivery_issue
+My shipment has been delayed again.,delivery_issue
+I am still waiting for my parcel.,delivery_issue
+The courier service failed to deliver my order.,delivery_issue
+My package has been missing for several days.,delivery_issue
+Can you check why my order has not arrived?,delivery_issue
+I want my money back.,refund_request
+Please return the amount I paid.,refund_request
+When will I receive my money back?,refund_request
+The money has not been credited to my account.,refund_request
+I am waiting for my returned payment.,refund_request
+I cancelled my order but have not received my money.,refund_request
+Please process my repayment.,refund_request
+The refund amount is missing from my bank account.,refund_request
+I need a reimbursement for this purchase.,refund_request
+Why is my refund taking so long?,refund_request
+My returned money has not arrived.,refund_request
+I have not received the amount for my returned product.,refund_request
+Please check the status of my money return.,refund_request
+I was promised a refund but nothing was credited.,refund_request
+How long does it take to get my money back?,refund_request
+I no longer want this order.,cancellation_request
+Please stop processing my purchase.,cancellation_request
+I placed the order by mistake and want to withdraw it.,cancellation_request
+Do not ship my order. I want to cancel it.,cancellation_request
+I changed my mind about buying this product.,cancellation_request
+Please terminate my subscription.,cancellation_request
+I do not want the upcoming renewal.,cancellation_request
+Can you stop my order before it is dispatched?,cancellation_request
+I want to withdraw my booking.,cancellation_request
+Please discontinue my service.,cancellation_request
+I accidentally ordered the wrong item. Please cancel it.,cancellation_request
+I want to stop this purchase.,cancellation_request
+Please remove my order from processing.,cancellation_request
+I do not need this booking anymore.,cancellation_request
+Cancel my subscription before the next billing date.,cancellation_request
