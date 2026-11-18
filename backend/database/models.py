@@ -1,10 +1,95 @@
+﻿import uuid
 
-"""Database models for the helpdesk system."""
-
-from sqlalchemy import Column, Integer, String, Text, DateTime
+from sqlalchemy import (
+    Column,
+    Integer,
+    String,
+    Text,
+    DateTime,
+    Boolean,
+    ForeignKey,
+)
 from sqlalchemy.sql import func
 
 from database.database import Base
+
+
+class Company(Base):
+
+    __tablename__ = "companies"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    name = Column(String(255), nullable=False)
+
+    slug = Column(String(255), unique=True, nullable=False, index=True)
+
+    bot_public_id = Column(
+        String(36),
+        unique=True,
+        nullable=False,
+        index=True,
+        default=lambda: str(uuid.uuid4()),
+    )
+
+    is_active = Column(Boolean, default=True, nullable=False)
+
+    created_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+
+class BotConfiguration(Base):
+
+    __tablename__ = "bot_configurations"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    company_id = Column(
+        Integer,
+        ForeignKey("companies.id", ondelete="CASCADE"),
+        unique=True,
+        nullable=False,
+        index=True,
+    )
+
+    bot_name = Column(
+        String(255),
+        nullable=False,
+        default="Support Assistant",
+    )
+
+    what_this_bot_helps_with = Column(Text, nullable=True)
+
+    about_business = Column(Text, nullable=True)
+
+    how_to_respond = Column(Text, nullable=True)
+
+    when_to_handoff = Column(Text, nullable=True)
+
+    dos = Column(Text, nullable=True)
+
+    donts = Column(Text, nullable=True)
+
+    advanced_instructions = Column(Text, nullable=True)
+
+    created_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
 
 
 class Ticket(Base):
@@ -19,6 +104,10 @@ class Ticket(Base):
 
     customer_message = Column(Text, nullable=False)
 
+    additional_details = Column(Text, nullable=True)
+
+    customer_email = Column(String(255), nullable=True)
+
     intent = Column(String(100), nullable=False)
 
     priority = Column(String(20), default="Medium")
@@ -27,10 +116,107 @@ class Ticket(Base):
 
     agent_reply = Column(Text, nullable=True)
 
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    created_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now()
+    )
 
     updated_at = Column(
         DateTime(timezone=True),
         server_default=func.now(),
         onupdate=func.now()
+    )
+
+from sqlalchemy import JSON
+
+
+class KnowledgeBaseFile(Base):
+    __tablename__ = "knowledge_base_files"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    company_id = Column(
+        Integer,
+        ForeignKey("companies.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    original_filename = Column(String(255), nullable=False)
+    stored_filename = Column(String(255), nullable=False, unique=True)
+    file_type = Column(String(20), nullable=False)
+    row_count = Column(Integer, default=0, nullable=False)
+    status = Column(String(30), default="processed", nullable=False)
+
+    created_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+
+
+class KnowledgeBaseRecord(Base):
+    __tablename__ = "knowledge_base_records"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    company_id = Column(
+        Integer,
+        ForeignKey("companies.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    file_id = Column(
+        Integer,
+        ForeignKey("knowledge_base_files.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    record_data = Column(JSON, nullable=False)
+    search_text = Column(Text, nullable=False)
+
+    created_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+
+
+class TicketResolutionReview(Base):
+
+    __tablename__ = "ticket_resolution_reviews"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    ticket_id = Column(
+        String(20),
+        ForeignKey("tickets.ticket_id", ondelete="CASCADE"),
+        unique=True,
+        nullable=False,
+        index=True,
+    )
+
+    company_id = Column(
+        Integer,
+        ForeignKey("companies.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    complaint = Column(Text, nullable=False)
+
+    intent = Column(String(100), nullable=False)
+
+    approved_solution = Column(Text, nullable=False)
+
+    approval_status = Column(
+        String(20),
+        nullable=False,
+    )
+
+    approved_at = Column(DateTime(timezone=True), nullable=True)
+
+    created_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
     )

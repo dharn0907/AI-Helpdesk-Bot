@@ -1,0 +1,160 @@
+text,intent,scenario
+My previous support request is still unanswered.,CUSTOMER_SUPPORT,existing_request
+I keep getting sent back to the login page.,CUSTOMER_SUPPORT,account
+What is your company about?,GENERAL_QUERY,company_information
+We may be interested in working with your company.,BUSINESS_ENQUIRY,partnership
+Can you tell me a little about this website?,GENERAL_QUERY,website_information
+I was billed twice for the same service.,CUSTOMER_SUPPORT,billing
+Have a nice day.,GENERAL_QUERY,farewell
+Can you explain what this platform does?,GENERAL_QUERY,platform_information
+Is this website available on mobile?,GENERAL_QUERY,website_information
+I want to speak to a human support agent.,CUSTOMER_SUPPORT,human_support
+I want to book a consultation.,BUSINESS_ENQUIRY,booking
+Where can I find the information section?,GENERAL_QUERY,navigation
+I'm just looking around your website.,GENERAL_QUERY,website_information
+I am interested in purchasing your service.,BUSINESS_ENQUIRY,purchase
+"I was expecting a confirmation, but nothing arrived.",CUSTOMER_SUPPORT,general_issue
+Who are you?,GENERAL_QUERY,identity
+Could you walk me through what your company provides?,BUSINESS_ENQUIRY,services
+Can I schedule a demonstration?,BUSINESS_ENQUIRY,booking
+Do you have a solution that fits my requirements?,BUSINESS_ENQUIRY,recommendation
+Can you explain how this website works?,GENERAL_QUERY,website_information
+I need to understand the costs before making a decision.,BUSINESS_ENQUIRY,pricing
+I need help with an existing request.,CUSTOMER_SUPPORT,existing_request
+Tell me something interesting.,GENERAL_QUERY,casual_conversation
+Could you check what happened to my earlier request?,CUSTOMER_SUPPORT,existing_request
+Can I get a breakdown of the different plans?,BUSINESS_ENQUIRY,pricing
+Do you offer any premium plans?,BUSINESS_ENQUIRY,pricing
+There is an error when I use this service.,CUSTOMER_SUPPORT,technical
+I hope you're doing well.,GENERAL_QUERY,greeting
+The service is not working as expected.,CUSTOMER_SUPPORT,technical
+Can you explain the purpose of this website?,GENERAL_QUERY,website_information
+I have a question that isn't related to a purchase.,GENERAL_QUERY,general_information
+What kind of company is this?,GENERAL_QUERY,company_information
+What are the usual ways to reach your company?,GENERAL_QUERY,contact_information
+Is there a way to try the platform before committing?,BUSINESS_ENQUIRY,trial
+How long will it take to receive my refund?,CUSTOMER_SUPPORT,refund
+Something went wrong with my recent transaction.,CUSTOMER_SUPPORT,payment
+Can I speak with someone about your offerings?,BUSINESS_ENQUIRY,sales
+I have not received a response to my previous complaint.,CUSTOMER_SUPPORT,complaint
+Can I get a quotation for your services?,BUSINESS_ENQUIRY,quotation
+Could you explain that in simpler words?,GENERAL_QUERY,general_information
+"I've been trying to log in, but it won't let me.",CUSTOMER_SUPPORT,account
+Can I arrange a discussion with your sales team?,BUSINESS_ENQUIRY,sales
+I am unable to access my account.,CUSTOMER_SUPPORT,account
+I paid for the service but my account still shows unpaid.,CUSTOMER_SUPPORT,payment
+What is the process for getting started?,BUSINESS_ENQUIRY,onboarding
+I need help resolving a technical problem.,CUSTOMER_SUPPORT,technical
+The feature worked yesterday but not today.,CUSTOMER_SUPPORT,technical
+Where can I find the different sections of this website?,GENERAL_QUERY,navigation
+My payment was deducted but the transaction failed.,CUSTOMER_SUPPORT,payment
+What features are included in your platform?,BUSINESS_ENQUIRY,features
+My service suddenly stopped working.,CUSTOMER_SUPPORT,technical
+I want to raise a complaint.,CUSTOMER_SUPPORT,complaint
+Where should I look for more information?,GENERAL_QUERY,navigation
+Is there a free trial available?,BUSINESS_ENQUIRY,trial
+Please help me recover my account.,CUSTOMER_SUPPORT,account
+Please transfer this issue to someone who can resolve it.,CUSTOMER_SUPPORT,human_support
+I would like to know more about your offerings.,BUSINESS_ENQUIRY,services
+I am unhappy with how my issue was handled.,CUSTOMER_SUPPORT,complaint
+Can you help me understand this topic?,GENERAL_QUERY,general_information
+Can you provide some general information?,GENERAL_QUERY,general_information
+Would it be possible to get a walkthrough of your platform?,BUSINESS_ENQUIRY,demonstration
+Please help me resolve my pending issue.,CUSTOMER_SUPPORT,general_issue
+I have been waiting for help for quite some time.,CUSTOMER_SUPPORT,existing_request
+I would like to discuss a business partnership.,BUSINESS_ENQUIRY,partnership
+I want to stop using the service and end my subscription.,CUSTOMER_SUPPORT,cancellation
+I want to cancel my subscription.,CUSTOMER_SUPPORT,cancellation
+Can you explain what is included in each package?,BUSINESS_ENQUIRY,features
+Where can I find your privacy policy?,GENERAL_QUERY,website_information
+I'd like to arrange a meeting to discuss your services.,BUSINESS_ENQUIRY,booking
+I need someone to take responsibility for fixing this.,CUSTOMER_SUPPORT,escalation
+"That's all I wanted to know, thanks.",GENERAL_QUERY,gratitude
+Is your service suitable for a growing organization?,BUSINESS_ENQUIRY,services
+That's interesting. Tell me a little more.,GENERAL_QUERY,casual_conversation
+Goodbye!,GENERAL_QUERY,farewell
+I would like my money returned for this transaction.,CUSTOMER_SUPPORT,refund
+Good morning.,GENERAL_QUERY,greeting
+Are you available throughout the day?,GENERAL_QUERY,business_information
+"I've followed the instructions, but the problem remains.",CUSTOMER_SUPPORT,technical
+Are there different packages available?,BUSINESS_ENQUIRY,pricing
+"Thanks, that answers my question.",GENERAL_QUERY,gratitude
+Can someone explain your service packages?,BUSINESS_ENQUIRY,services
+What can you help me with?,GENERAL_QUERY,capabilities
+Can I get a personalized quotation?,BUSINESS_ENQUIRY,quotation
+I want to escalate my existing complaint.,CUSTOMER_SUPPORT,escalation
+I would like to request a price estimate.,BUSINESS_ENQUIRY,quotation
+I have a general question.,GENERAL_QUERY,general_information
+What are your working hours?,GENERAL_QUERY,business_information
+Could you demonstrate how the platform works?,BUSINESS_ENQUIRY,demonstration
+What are the available subscription options?,BUSINESS_ENQUIRY,pricing
+This problem is preventing me from using the service.,CUSTOMER_SUPPORT,technical
+I am facing an issue with my registration.,CUSTOMER_SUPPORT,account
+"Hi, how are you?",GENERAL_QUERY,greeting
+Is there somewhere I can read about your company?,GENERAL_QUERY,company_information
+Can you explain the meaning of this feature?,GENERAL_QUERY,definition
+Where is your company located?,GENERAL_QUERY,company_information
+The payment keeps failing whenever I try.,CUSTOMER_SUPPORT,payment
+What tasks can you assist me with?,GENERAL_QUERY,capabilities
+Where can I find your contact details?,GENERAL_QUERY,contact_information
+What are the benefits of choosing your company?,BUSINESS_ENQUIRY,services
+I need an update on my support request.,CUSTOMER_SUPPORT,existing_request
+Thank you for your help.,GENERAL_QUERY,gratitude
+See you later!,GENERAL_QUERY,farewell
+Something doesn't seem right with the amount charged.,CUSTOMER_SUPPORT,billing
+Can I request a business proposal?,BUSINESS_ENQUIRY,quotation
+My account has been locked.,CUSTOMER_SUPPORT,account
+What makes one package different from another?,BUSINESS_ENQUIRY,comparison
+I want to request a refund.,CUSTOMER_SUPPORT,refund
+The application keeps crashing.,CUSTOMER_SUPPORT,technical
+Hello!,GENERAL_QUERY,greeting
+We're considering your company for an upcoming project.,BUSINESS_ENQUIRY,business_interest
+Who developed this platform?,GENERAL_QUERY,platform_information
+What services do you offer?,BUSINESS_ENQUIRY,services
+How can I contact your company?,GENERAL_QUERY,contact_information
+Do you provide customized solutions?,BUSINESS_ENQUIRY,services
+I forgot my password and cannot log in.,CUSTOMER_SUPPORT,account
+I think there's a mistake in my bill.,CUSTOMER_SUPPORT,billing
+I don't understand why my account access was removed.,CUSTOMER_SUPPORT,account
+Do you have a solution suitable for small businesses?,BUSINESS_ENQUIRY,services
+I have raised this several times without a solution.,CUSTOMER_SUPPORT,escalation
+Please share details about your available solutions.,BUSINESS_ENQUIRY,services
+I need assistance with a failed transaction.,CUSTOMER_SUPPORT,payment
+What options would you recommend for a new customer?,BUSINESS_ENQUIRY,recommendation
+Can you introduce yourself?,GENERAL_QUERY,identity
+How do your different plans compare with each other?,BUSINESS_ENQUIRY,comparison
+How much does your service cost?,BUSINESS_ENQUIRY,pricing
+Can I arrange a consultation before choosing a service?,BUSINESS_ENQUIRY,consultation
+Can you tell me about your available plans?,BUSINESS_ENQUIRY,pricing
+Could you point me in the right direction?,GENERAL_QUERY,navigation
+How do I contact your support team about a problem?,CUSTOMER_SUPPORT,human_support
+What is the purpose of this platform?,GENERAL_QUERY,platform_information
+Could your team help us choose the right package?,BUSINESS_ENQUIRY,consultation
+I just wanted to say hello.,GENERAL_QUERY,greeting
+I am experiencing an issue and need assistance.,CUSTOMER_SUPPORT,general_issue
+"Before we begin, could you introduce your company?",GENERAL_QUERY,company_information
+I'd like to explore whether your services suit our requirements.,BUSINESS_ENQUIRY,services
+I'm exploring options and would like to know what you offer.,BUSINESS_ENQUIRY,services
+I was charged incorrectly.,CUSTOMER_SUPPORT,billing
+When is your office normally open?,GENERAL_QUERY,business_information
+"I've already reported this issue, but it hasn't been fixed.",CUSTOMER_SUPPORT,escalation
+What does your company specialize in?,GENERAL_QUERY,company_information
+What does your organization generally do?,GENERAL_QUERY,company_information
+I'd like to proceed with one of your offerings.,BUSINESS_ENQUIRY,purchase
+I was just curious about your organization.,GENERAL_QUERY,company_information
+What does this term mean?,GENERAL_QUERY,definition
+I can't get into my profile anymore.,CUSTOMER_SUPPORT,account
+Can someone from support look into this?,CUSTOMER_SUPPORT,human_support
+Do you provide enterprise solutions?,BUSINESS_ENQUIRY,services
+What would it cost to use your service?,BUSINESS_ENQUIRY,pricing
+I'd like to know whether you offer flexible packages.,BUSINESS_ENQUIRY,pricing
+What is the main purpose of this service?,GENERAL_QUERY,definition
+I want to compare your available plans.,BUSINESS_ENQUIRY,comparison
+Hey there!,GENERAL_QUERY,greeting
+How can I become a customer?,BUSINESS_ENQUIRY,onboarding
+I'm looking for a service that can meet our business needs.,BUSINESS_ENQUIRY,services
+The website keeps showing me an error.,CUSTOMER_SUPPORT,technical
+I need to discontinue my current subscription.,CUSTOMER_SUPPORT,cancellation
+How can I report a problem?,CUSTOMER_SUPPORT,complaint
+Can you send me information about your offerings?,BUSINESS_ENQUIRY,services
+Can you tell me about your service capabilities?,BUSINESS_ENQUIRY,features

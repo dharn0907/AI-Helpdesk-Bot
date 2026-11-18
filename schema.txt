@@ -1,0 +1,13 @@
+Column	PostgreSQL type	Constraints / Default	Description
+id	INTEGER	Primary Key, Auto Increment	Internal ticket ID
+ticket_id	VARCHAR(20)	UNIQUE, INDEX	Public ticket reference
+session_id	VARCHAR(100)	NULL allowed	Chat session identifier
+customer_message	TEXT	NOT NULL	Original customer complaint
+additional_details	TEXT	NULL allowed	Extra information from customer
+customer_email	VARCHAR(255)	NULL allowed	Customer email
+intent	VARCHAR(100)	NOT NULL	Classified complaint category
+priority	VARCHAR(20)	DEFAULT 'Medium'	Ticket priority
+status	VARCHAR(30)	DEFAULT 'Open'	Current ticket status
+agent_reply	TEXT	NULL allowed	Human agent response
+created_at	TIMESTAMP WITH TIME ZONE	DEFAULT NOW()	Ticket creation time
+updated_at	TIMESTAMP WITH TIME ZONE	DEFAULT NOW()	Last update time

@@ -1,0 +1,1201 @@
+text,intent
+Please discontinue my service.,cancellation_request
+I would like to ask: i would like to send this item back.,return_request
+My device is not recognizing an SD card.,product_issue
+I have not received the amount for my returned product.,refund_request
+I am stuck on the login page.,login_issue
+The website declines my debit card every time I try to pay,payment_issue
+I would like to ask: is my order still being processed?,order_status_enquiry
+The screen goes black while I am working.,product_issue
+I need a reimbursement for this purchase.,refund_request
+The courier is not contacting me,delivery_issue
+I would like to ask: can you help me exchange my purchase?,exchange_request
+My laptop keeps restarting unexpectedly.,product_issue
+I cannot locate the settings for this feature,general_enquiry
+I am contacting support because i received the wrong size and want an exchange.,exchange_request
+What is your exchange policy?,general_enquiry
+Please help me: i want to return the laptop I purchased.,return_request
+Why is my shipment taking so long?,delivery_issue
+I am facing this issue: i keep getting an incorrect password message,login_issue
+Do you have a price matching policy?,general_enquiry
+"Hi, one item arrived, but the remaining items are missing",delivery_issue
+Please tell me the steps to exchange a product.,exchange_request
+"Hi, can you explain how to add an item to my wishlist",general_enquiry
+Do you provide online product support?,general_enquiry
+"Hi, my payment failed while placing the order",payment_issue
+I need help because how do I use the wishlist,general_enquiry
+I would like to ask: i want to know the warranty coverage for my purchase.,warranty_request
+Please check the status of my pending refund.,refund_request
+Please help me: where is my order right now?,order_status_enquiry
+How can I request a product exchange? I would appreciate your guidance.,exchange_request
+I see a suspended account message when I open my profile,account_issue
+Is my package ready for dispatch?,order_status_enquiry
+"Hi, the save button does not update my registered mobile number",account_issue
+Please remove my order from processing.,cancellation_request
+I have been waiting too long for my refund.,refund_request
+Could you assist? the returned product passed inspection but no refund was issued,refund_request
+I received the product but want to return it I would appreciate your guidance.,return_request
+Could you assist me? i would like to replace this item with another model.,exchange_request
+The screen has started flickering randomly.,product_issue
+Where can I find the feature settings,general_enquiry
+What is the process for returning a laptop?,return_request
+When does my product warranty expire?,warranty_request
+Can you stop my order before it ships?,cancellation_request
+My product stopped working and I want warranty service Please let me know what I should do.,warranty_request
+Can I exchange my laptop for a higher configuration?,exchange_request
+The delivery address I saved is no longer visible,account_issue
+Can you check the status of my order?,order_status_enquiry
+How can I return a product? Please let me know what I should do.,return_request
+Can you check the status of my order? Could you explain how to proceed?,order_status_enquiry
+I do not need this booking anymore.,cancellation_request
+I would like to send this item back Please advise me on the next step.,return_request
+I received the wrong size and want an exchange Could you explain how to proceed?,exchange_request
+I placed the order by mistake.,cancellation_request
+My refund is still not credited.,refund_request
+The UPI transaction is showing pending,payment_issue
+My laptop freezes when I open multiple applications.,product_issue
+Please help me: i cannot sign in using Google,login_issue
+What is the process for creating an account?,general_enquiry
+I need help because i returned the product and need my money back,refund_request
+I am facing this issue: the amount was deducted but the order is still unpaid,payment_issue
+The login process keeps showing an unknown error.,login_issue
+Can you cancel my booking?,cancellation_request
+My account keeps getting signed out automatically.,login_issue
+Could you assist me? how can I request a product exchange?,exchange_request
+The wallet balance was deducted incorrectly.,payment_issue
+Can I get an update about my order? Could you explain how to proceed?,order_status_enquiry
+"Hi, i want to cancel my order",cancellation_request
+I would like to ask: i would like to replace this item with another model.,exchange_request
+Please help me: the device becomes unusually hot during basic operation,product_issue
+My shipment tracking status has been unchanged for several days,delivery_issue
+I cannot log in to my account Can you look into this?,login_issue
+Where is my order right now? I would appreciate your guidance.,order_status_enquiry
+My account login keeps failing.,login_issue
+My shipment tracking status has been unchanged for several days What should I do next?,delivery_issue
+The payment gateway timed out.,payment_issue
+I received the wrong size and want an exchange.,exchange_request
+I need help because the login session expires immediately,login_issue
+I ordered the wrong product by mistake; please cancel it,cancellation_request
+I am contacting support because what is the tracking status of my order?,order_status_enquiry
+How can I claim my product warranty? Please advise me on the next step.,warranty_request
+Could you assist me? can I exchange my product for a different variant?,exchange_request
+My device keeps showing blue screen errors.,product_issue
+Please help me: the website says my password is incorrect,login_issue
+My UPI app shows success but the store shows failure.,payment_issue
+My payment is stuck in an unknown status.,payment_issue
+I received an empty delivery package.,delivery_issue
+The specifications of the delivered item do not match the listing,product_issue
+How do I get my laptop repaired under warranty?,warranty_request
+I would like to send this item back Could you explain how to proceed?,return_request
+My login credentials are being rejected.,login_issue
+"The product does not meet my expectations, so I want to return it Please advise me on the next step.",return_request
+I am facing this issue: it works for a few minutes and then shuts down,product_issue
+The audio suddenly stops working.,product_issue
+How can I return a product? Please advise me on the next step.,return_request
+The delivery agent marked me unavailable without visiting.,delivery_issue
+This item does not connect to the device listed as compatible,product_issue
+"Could you assist? the order has not shipped yet, so I want to stop it",cancellation_request
+Can I use multiple discount coupons?,general_enquiry
+Has my order been confirmed?,order_status_enquiry
+How do I subscribe to product updates?,general_enquiry
+I am contacting support because i want the same product in a different colour.,exchange_request
+Could you assist me? can you arrange a return for my order?,return_request
+Please check the status of my money return.,refund_request
+Please help me: the UPI transaction is showing pending,payment_issue
+The tracking information has not changed.,delivery_issue
+I would like to ask: has my order been confirmed?,order_status_enquiry
+The product stops working intermittently,product_issue
+I no longer wish to proceed with this order.,cancellation_request
+When will my order be shipped? Please advise me on the next step.,order_status_enquiry
+I cannot pay using my debit card.,payment_issue
+My registered contact information needs updating.,account_issue
+I want to withdraw my order.,cancellation_request
+My product stopped working and I want warranty service Could you explain how to proceed?,warranty_request
+Please cancel my scheduled service.,cancellation_request
+Please remove this purchase from my orders.,cancellation_request
+Can I return an unopened product?,return_request
+The save button does not update my registered mobile number,account_issue
+I want to know the available payment options,general_enquiry
+I want to permanently delete my profile.,account_issue
+I do not want this order anymore.,cancellation_request
+I am contacting support because can I return an unopened product?,return_request
+I am facing this issue: the delivery person has not called before attempting delivery,delivery_issue
+I am facing this issue: the updated profile details disappear when I refresh,account_issue
+How can I find your service centre locations?,general_enquiry
+Please help me: the OTP is accepted but login fails with an error,login_issue
+I want to initiate a return for my purchase Please let me know what I should do.,return_request
+The system does not recognize my email during login.,login_issue
+Please help me: the product arrived with a missing component,product_issue
+Where can I track my purchase?,order_status_enquiry
+I need to register a warranty claim Could you explain how to proceed?,warranty_request
+I need to change the email linked to my account.,account_issue
+How do I use the wishlist,general_enquiry
+Could you assist me? please arrange an exchange for my order.,exchange_request
+I need support: please arrange an exchange for my order.,exchange_request
+Can you arrange a return for my order? Please advise me on the next step.,return_request
+I am facing this issue: which payment methods do you accept,general_enquiry
+How can I compare two laptop models?,general_enquiry
+My refund destination appears to be incorrect,refund_request
+The delivery date has passed but my order is missing.,delivery_issue
+Please help me: please cancel the upcoming automatic renewal,cancellation_request
+The OTP is accepted but login fails with an error,login_issue
+How can I return a product?,return_request
+I need help because please explain the warranty coverage available,general_enquiry
+What is the warranty period for this laptop? Could you explain how to proceed?,warranty_request
+I received the product but want to return it.,return_request
+Where is my order right now? Could you explain how to proceed?,order_status_enquiry
+I want the same product in a different colour Could you explain how to proceed?,exchange_request
+I cannot receive the OTP needed to sign in.,login_issue
+The item does not turn on after unpacking Please guide me.,product_issue
+"The order has not shipped yet, so I want to stop it What should I do next?",cancellation_request
+The product is different from what I expected. I want to return it.,return_request
+"Hi, my payment failed while placing the order Please check this for me.",payment_issue
+I cannot log in after multiple password reset attempts.,login_issue
+My shipment has not moved for a week.,delivery_issue
+How can I update my account preferences?,account_issue
+I would like to replace this item with another model I would appreciate your guidance.,exchange_request
+My payment was successful but no receipt arrived.,payment_issue
+The product arrived with a missing component,product_issue
+Please help me: i cannot locate the settings for this feature,general_enquiry
+My return was completed but the refund is missing.,refund_request
+The display has dead pixels.,product_issue
+Please cancel my order as soon as possible.,cancellation_request
+The refunded amount is lower than what I paid,refund_request
+The battery percentage jumps unexpectedly.,product_issue
+An error appeared on the payment page after I entered my details,payment_issue
+My parcel is stuck at the sorting centre.,delivery_issue
+Please withdraw my purchase request.,cancellation_request
+Has my order been confirmed? Could you explain how to proceed?,order_status_enquiry
+An accessory that should be included is missing from the box,product_issue
+The refund was approved but the money is missing.,refund_request
+I want to add another address to my account.,account_issue
+Could you assist? the name shown in my profile is wrong,account_issue
+Can I exchange the product I received yesterday?,exchange_request
+I want to initiate a return for my purchase Could you explain how to proceed?,return_request
+My login session expires immediately.,login_issue
+I need support: can I get an update about my order?,order_status_enquiry
+I cannot locate the settings for this feature Please guide me.,general_enquiry
+I need to change my account's registered details.,account_issue
+My credentials work elsewhere but not on this website.,login_issue
+The transaction was cancelled after money was deducted.,payment_issue
+How do I get my laptop repaired under warranty? Please advise me on the next step.,warranty_request
+How can I remove an old delivery address?,account_issue
+The password reset email is not being delivered.,login_issue
+It works for a few minutes and then shuts down,product_issue
+I would like to ask: where can I submit a warranty claim?,warranty_request
+I cannot complete two-factor authentication.,login_issue
+My saved address disappeared,account_issue
+The account sign-in process is not responding.,login_issue
+I would like to ask: when will my order be shipped?,order_status_enquiry
+I need help because the parcel has been sitting at the same hub for days,delivery_issue
+I would like to send this item back I would appreciate your guidance.,return_request
+I received a payment error despite sufficient balance.,payment_issue
+Please help me: the login page rejects my correct username and password,login_issue
+My order has not arrived yet Can you look into this?,delivery_issue
+I accidentally entered the wrong address in my profile.,account_issue
+Do you offer student discounts,general_enquiry
+I am contacting support because can you arrange a return for my order?,return_request
+The delivery address was ignored by the courier.,delivery_issue
+Where can I submit a warranty claim?,warranty_request
+The courier is not contacting me Please guide me.,delivery_issue
+"Hi, i want a refund for my cancelled order Please check this for me.",refund_request
+The refund has not appeared on my card statement.,refund_request
+Please arrange an exchange for my order Please advise me on the next step.,exchange_request
+How do I update my registered billing address?,account_issue
+Please help me: is my order still being processed?,order_status_enquiry
+I want to exchange the laptop for another model Please let me know what I should do.,exchange_request
+I am unable to access the website using my credentials.,login_issue
+I need an update on my delayed shipment,delivery_issue
+Can you check whether my device is under warranty? Please advise me on the next step.,warranty_request
+Could you assist me? can I get an update about my order?,order_status_enquiry
+Please help me: i want to initiate a return for my purchase.,return_request
+Can you explain how to add an item to my wishlist Can you look into this?,general_enquiry
+The device becomes unusually hot during basic operation,product_issue
+My requirements changed and I need to cancel.,cancellation_request
+I want to cancel my order Can you look into this?,cancellation_request
+I need support: can you check the status of my order?,order_status_enquiry
+Is my laptop still covered under warranty? Please let me know what I should do.,warranty_request
+How do I change my preferred contact method?,account_issue
+Please help me: please help me update my registered email address Please check this for me.,account_issue
+The courier has not delivered my parcel.,delivery_issue
+Can I get a free repair under the product warranty?,warranty_request
+Please help me: how do I get my laptop repaired under warranty?,warranty_request
+Could you assist? the specifications of the delivered item do not match the listing,product_issue
+I would like to know whether students get a discount,general_enquiry
+I would like to replace this item with another model Please let me know what I should do.,exchange_request
+I cannot pay through internet banking.,payment_issue
+Please help me: i want the same product in a different colour.,exchange_request
+I need support: can you arrange a return for my order?,return_request
+I need help because i was charged twice for one order,payment_issue
+I cannot log in to my account,login_issue
+Is my order confirmed in your system?,order_status_enquiry
+"Could you assist? support said the refund would be processed, but I have no update",refund_request
+"Hi, where can I find the feature settings",general_enquiry
+Please tell me when customer support is available What should I do next?,general_enquiry
+I selected the wrong item and need to cancel,cancellation_request
+Can I return an unopened product? Could you explain how to proceed?,return_request
+My order is stuck at the sorting facility,delivery_issue
+Please help me: an error appeared on the payment page after I entered my details,payment_issue
+Can you arrange a return for my order?,return_request
+The tracking page has not updated,delivery_issue
+I would like to ask: how can I request a product exchange?,exchange_request
+Can you arrange a pickup for my returned product?,return_request
+My account profile information is incorrect This is causing a problem.,account_issue
+The UPI transaction is showing pending Please guide me.,payment_issue
+I need support: i would like to send this item back.,return_request
+Please cancel the duplicate order.,cancellation_request
+Has my order moved to the shipping stage?,order_status_enquiry
+I am contacting support because i want to know the warranty coverage for my purchase.,warranty_request
+"Hi, i get an error after entering the OTP",login_issue
+The courier attempted delivery at the wrong location.,delivery_issue
+Please help me: my profile changes are not being saved,account_issue
+I cannot access my account after changing my password.,login_issue
+Please help me: when will my order be shipped?,order_status_enquiry
+"Hi, this item does not connect to the device listed as compatible",product_issue
+The wallet balance was deducted but payment failed,payment_issue
+My order was delivered to a different building.,delivery_issue
+My shipment has been delayed repeatedly.,delivery_issue
+Please tell me how to edit the username on my account,account_issue
+My card payment was processed but the order was not.,payment_issue
+The promised refund date has passed.,refund_request
+When will my order be shipped? Could you explain how to proceed?,order_status_enquiry
+The verification email for login never arrived.,login_issue
+The amount was deducted but the order is still unpaid,payment_issue
+"Hi, how can I save a second delivery address in my profile",account_issue
+I am unable to log in after enabling two-factor verification.,login_issue
+Can you arrange a return for my order? Could you explain how to proceed?,return_request
+The Wi-Fi keeps disconnecting on my device.,product_issue
+"Hi, the returned item was received, but I have not received the refund",refund_request
+Please help me: the account settings page gives me an error,account_issue
+I need to add another address to my account,account_issue
+I received the wrong size and want an exchange Please let me know what I should do.,exchange_request
+I am not receiving the login verification code.,login_issue
+I want the same product in a different colour I would appreciate your guidance.,exchange_request
+I am contacting support because please tell me your product return procedure.,return_request
+Do you offer installation services?,general_enquiry
+I accidentally ordered the same product twice.,cancellation_request
+Is my order still being processed? Please advise me on the next step.,order_status_enquiry
+I am contacting support because my product stopped working and I want warranty service.,warranty_request
+I need support: can I return an unopened product?,return_request
+Please help me: the payment did not go through when I tried to place my order,payment_issue
+"The product does not meet my expectations, so I want to return it Please let me know what I should do.",return_request
+"The product does not meet my expectations, so I want to return it Could you explain how to proceed?",return_request
+Could you assist me? has my package been dispatched?,order_status_enquiry
+I would like to ask: how can I return a product?,return_request
+My UPI payment has been stuck in pending status This is causing a problem.,payment_issue
+Do you offer student discounts Please guide me.,general_enquiry
+I ordered the wrong product by mistake; please cancel it Can you look into this?,cancellation_request
+My laptop is making an unusual noise.,product_issue
+Please arrange an exchange for my order Please let me know what I should do.,exchange_request
+My account login page keeps loading What should I do next?,login_issue
+Do you provide technical support after purchase?,general_enquiry
+The fan runs continuously even when idle.,product_issue
+Please help me: has my package been dispatched?,order_status_enquiry
+"Tracking says delivered, but nothing reached my address",delivery_issue
+Could you assist? i cannot attend the appointment and need to cancel the booking,cancellation_request
+Do you offer gift cards?,general_enquiry
+I am contacting support because has my order been confirmed?,order_status_enquiry
+I want to know why my refund is delayed.,refund_request
+I want to update my billing information.,account_issue
+The password reset link is not working This is causing a problem.,login_issue
+Can I exchange my product for a different variant? Please let me know what I should do.,exchange_request
+Could you assist? the material and finish are much worse than expected,product_issue
+The login OTP arrives too late to use.,login_issue
+Is my laptop still covered under warranty? Please advise me on the next step.,warranty_request
+Please tell me when customer support is available,general_enquiry
+Cancel my order before it is shipped This is causing a problem.,cancellation_request
+Could you assist me? i want the same product in a different colour.,exchange_request
+I need help because the refund was sent to the wrong payment method,refund_request
+Could you assist? my shipment tracking status has been unchanged for several days,delivery_issue
+I cannot get past the authentication screen.,login_issue
+I want to remove an old phone number.,account_issue
+Can I update my registered email address?,account_issue
+My refund request has been waiting for approval for days,refund_request
+The touchpad gestures have stopped working.,product_issue
+I cannot access my account settings,account_issue
+My sign-in request is timing out.,login_issue
+Please help me: the package arrived damaged during delivery,delivery_issue
+Do you have a physical store?,general_enquiry
+I would like to ask: i want to exchange the laptop for another model.,exchange_request
+When will the cancelled order amount be refunded?,refund_request
+I would like to send this item back Please let me know what I should do.,return_request
+The laptop camera shows a black screen.,product_issue
+The login page rejects my correct username and password Please guide me.,login_issue
+"Hi, the product I received is defective",product_issue
+Please help me: do you offer student discounts,general_enquiry
+I am locked out after several login attempts,login_issue
+The delivery agent is unable to locate my address.,delivery_issue
+I would like to ask: please arrange an exchange for my order.,exchange_request
+The transaction timed out after I paid,payment_issue
+I need support: i want the same product in a different colour.,exchange_request
+Please help me: i need to register a warranty claim.,warranty_request
+"Tracking says delivered, but nothing reached my address Can you look into this?",delivery_issue
+The courier says my address is incorrect.,delivery_issue
+"I am facing this issue: i no longer need this purchase, so please cancel it",cancellation_request
+Could you assist? my order is stuck at the sorting facility,delivery_issue
+I need help because only part of my order was delivered,delivery_issue
+My order was marked as delivered but is still missing.,delivery_issue
+Can I exchange my product for a different variant?,exchange_request
+I need to correct my account information.,account_issue
+I keep getting an incorrect password message This is causing a problem.,login_issue
+Could you assist me? i received the product but want to return it.,return_request
+I want to return the laptop I purchased.,return_request
+The website says my password is incorrect,login_issue
+I no longer want to purchase this item.,cancellation_request
+I want to know the current status of my purchase Could you explain how to proceed?,order_status_enquiry
+Where can I find your frequently asked questions?,general_enquiry
+What are your customer support hours?,general_enquiry
+I need assistance with a warranty replacement.,warranty_request
+The login session expires immediately,login_issue
+Please help me: can I get an update about my order?,order_status_enquiry
+"Please help me: the product does not meet my expectations, so I want to return it.",return_request
+I need help because the model number on the item is not the one I ordered,product_issue
+My laptop takes too long to start.,product_issue
+Do you provide product demonstrations?,general_enquiry
+Could you assist? my account login page keeps loading,login_issue
+Please help me: the expected delivery date has passed and I still have not received the parcel Please check this for me.,delivery_issue
+I would like to ask: i need to register a warranty claim.,warranty_request
+Could you assist? i received the wrong product model,product_issue
+The package arrived with missing accessories.,delivery_issue
+Please help me with my laptop warranty claim.,warranty_request
+Do you provide invoices for purchases?,general_enquiry
+Can you help me exchange my purchase? I would appreciate your guidance.,exchange_request
+My order is stuck at the sorting facility What should I do next?,delivery_issue
+I forgot my password and cannot sign in.,login_issue
+Has the seller processed my order?,order_status_enquiry
+I need to change my communication preferences.,account_issue
+I want to request a return for my recent purchase.,return_request
+I want to cancel one item from my order,cancellation_request
+Can I visit your showroom?,general_enquiry
+My profile picture is not updating.,account_issue
+I was promised a refund but nothing was credited.,refund_request
+Please cancel the duplicate order,cancellation_request
+"Hi, there are two charges on my statement for the same purchase",payment_issue
+Do you provide a warranty for this product,general_enquiry
+Please cancel my service booking.,cancellation_request
+Can I cancel an order that has not shipped?,cancellation_request
+Please help me: i would like to send this item back.,return_request
+When will my order be shipped?,order_status_enquiry
+The main feature stopped working after setup Can you look into this?,product_issue
+I need help because i have to sign in again every time I reopen the app,login_issue
+I need support: can you help me exchange my purchase?,exchange_request
+I need support: i want to exchange the laptop for another model.,exchange_request
+The display resolution keeps changing automatically.,product_issue
+What is the correct way to reach your support team,general_enquiry
+Could you assist me? how can I claim my product warranty?,warranty_request
+Do you support international shipping?,general_enquiry
+I want to return the product delivered yesterday.,return_request
+The package shows delivered but I did not receive it,delivery_issue
+The order is taking too long; cancel it What should I do next?,cancellation_request
+I am contacting support because can I exchange my product for a different variant?,exchange_request
+Is it possible to edit the shipping address after checkout,general_enquiry
+I get an error after entering the OTP,login_issue
+I am contacting support because i would like to send this item back.,return_request
+My profile changes are not reflecting.,account_issue
+Is product exchange available for my order?,exchange_request
+Where can I read the terms and conditions?,general_enquiry
+The payment amount is different from the checkout total.,payment_issue
+I need support: has my package been dispatched?,order_status_enquiry
+I need to register a warranty claim.,warranty_request
+I cannot update my phone number,account_issue
+I am locked out after several login attempts.,login_issue
+I am facing this issue: what are your business hours,general_enquiry
+Please help me: my package has not arrived by the promised date.,delivery_issue
+How do I get my laptop repaired under warranty? Please let me know what I should do.,warranty_request
+The authentication code has expired.,login_issue
+I received an incomplete shipment.,delivery_issue
+I need support: can I exchange my product for a different variant?,exchange_request
+"Please help me: my order failed, so I need the deducted amount returned",refund_request
+Can I purchase an extended warranty?,general_enquiry
+My account details are not getting saved.,account_issue
+I want to know the warranty coverage for my purchase.,warranty_request
+"I need support: the product does not meet my expectations, so I want to return it.",return_request
+Can you explain how to add an item to my wishlist,general_enquiry
+"Hi, i cannot log in to my account",login_issue
+I am contacting support because i would like to replace this item with another model.,exchange_request
+How do I get my laptop repaired under warranty? Could you explain how to proceed?,warranty_request
+I would like to ask: what is the warranty period for this laptop?,warranty_request
+The package arrived damaged during delivery,delivery_issue
+I am facing this issue: i am locked out after several login attempts,login_issue
+I need help recovering access to my account.,login_issue
+Could you assist me? how can I return a product?,return_request
+Could you assist me? what is the tracking status of my order?,order_status_enquiry
+Please help me: i want to cancel one item from my order,cancellation_request
+The login button does nothing when clicked.,login_issue
+The returned product passed inspection but no refund was issued,refund_request
+I need to update my personal information.,account_issue
+Please help me: i received the wrong size and want an exchange.,exchange_request
+"The refund was approved, but the amount is not credited yet",refund_request
+The payment did not go through when I tried to place my order Please guide me.,payment_issue
+Could you assist me? can I return an unopened product?,return_request
+I need to register a warranty claim Please advise me on the next step.,warranty_request
+My phone number in the profile is incorrect.,account_issue
+I need support: i need to register a warranty claim.,warranty_request
+Where can I find the user manual?,general_enquiry
+The one-time password is not arriving on my phone,login_issue
+Please help me: the product stops working intermittently,product_issue
+I need support: where is my order right now?,order_status_enquiry
+My account was temporarily blocked after I tried signing in,login_issue
+Can you check whether my device is under warranty? Please let me know what I should do.,warranty_request
+Could you assist? please tell me when customer support is available,general_enquiry
+The bank declined a transaction that should have worked.,payment_issue
+I am facing this issue: i would like to know whether students get a discount,general_enquiry
+"Hi, i cannot log in to my account Please check this for me.",login_issue
+I keep getting an incorrect password message,login_issue
+Please help me: i want to know the warranty coverage for my purchase.,warranty_request
+I want to cancel one item from my order.,cancellation_request
+The login page freezes when I submit my details.,login_issue
+My refund has not reached my bank account.,refund_request
+I changed my mind about buying this product.,cancellation_request
+My account is not accepting the correct OTP.,login_issue
+"The refund was approved, but the amount is not credited yet What should I do next?",refund_request
+Could you assist? the item has physical damage,product_issue
+The app does not remember my login,login_issue
+I received only a partial refund,refund_request
+I need support: can you check whether my device is under warranty?,warranty_request
+I accidentally made two payments for one order.,payment_issue
+The payment status is not updating.,payment_issue
+"Hi, i want to change the email linked to my account Please check this for me.",account_issue
+The model number on the item is not the one I ordered,product_issue
+I am facing this issue: my UPI payment has been stuck in pending status,payment_issue
+My parcel is still not delivered.,delivery_issue
+I am facing this issue: an accessory that should be included is missing from the box,product_issue
+I am contacting support because can you help me exchange my purchase?,exchange_request
+I want to know the warranty coverage for my purchase Please advise me on the next step.,warranty_request
+I received a refund notification but no credit.,refund_request
+I received the product but want to return it Please advise me on the next step.,return_request
+I am contacting support because how can I claim my product warranty?,warranty_request
+The courier delivered my order to the wrong person.,delivery_issue
+Please help me: can I return an unopened product?,return_request
+"Hi, the delivery attempt failed even though I was home",delivery_issue
+What is the expected date for my refund,refund_request
+I am not satisfied with the product and want to return it.,return_request
+The parcel was damaged during transportation.,delivery_issue
+I cancelled my order but the amount is still not returned.,refund_request
+Can you help me exchange my purchase? Could you explain how to proceed?,exchange_request
+Could you assist me? can you check the status of my order?,order_status_enquiry
+Could you assist me? where is my order right now?,order_status_enquiry
+I am not receiving the login OTP,login_issue
+"The returned item was received, but I have not received the refund",refund_request
+Please help me: my product stopped working and I want warranty service.,warranty_request
+I no longer need this product.,cancellation_request
+"Hi, how can I contact customer support",general_enquiry
+The trackpad sometimes moves on its own.,product_issue
+I want to cancel one item from my order Please guide me.,cancellation_request
+The product I received is defective,product_issue
+My laptop restarts whenever I play games.,product_issue
+The package was left outside without informing me.,delivery_issue
+I need support: how do I get my laptop repaired under warranty?,warranty_request
+Could you assist? net banking is not working at checkout,payment_issue
+Please help me: what is the tracking status of my order?,order_status_enquiry
+I want to return the laptop I purchased Please advise me on the next step.,return_request
+My account information is not displaying correctly.,account_issue
+I am waiting for my returned payment.,refund_request
+The transaction is stuck on processing.,payment_issue
+How can I manage my saved addresses?,account_issue
+I need help because i cannot get past the sign-in screen because it keeps spinning,login_issue
+Please help me: please return the money for the order I cancelled Please check this for me.,refund_request
+Please help me: i would like to replace this item with another model.,exchange_request
+Where is my order right now? Please advise me on the next step.,order_status_enquiry
+My UPI payment has been stuck in pending status,payment_issue
+Please help me: how can I request a product exchange?,exchange_request
+Could you assist? the order is taking too long; cancel it,cancellation_request
+The website deducted more money than expected.,payment_issue
+Can I exchange my product for a different variant? Could you explain how to proceed?,exchange_request
+Do you have a loyalty rewards programme?,general_enquiry
+Can I change my delivery address after ordering,general_enquiry
+Do you offer financing options?,general_enquiry
+The cooling system is not working properly.,product_issue
+I would like to ask: i want to return the laptop I purchased.,return_request
+I want to know the current status of my purchase.,order_status_enquiry
+Please help me: i want to delete my account,account_issue
+I would like to ask: i received the wrong size and want an exchange.,exchange_request
+The product arrived with a missing component Please guide me.,product_issue
+My package has not arrived by the promised date.,delivery_issue
+My transaction was interrupted during checkout.,payment_issue
+Can I get an update about my order? Please let me know what I should do.,order_status_enquiry
+Do you have a newsletter?,general_enquiry
+My package arrived with damaged outer packaging.,delivery_issue
+"I clicked the reset link, but it opens an invalid page What should I do next?",login_issue
+I am facing this issue: the tracking page has not updated,delivery_issue
+"I am contacting support because the product does not meet my expectations, so I want to return it.",return_request
+I would like to replace this item with another model Please advise me on the next step.,exchange_request
+Where can I find information about your company?,general_enquiry
+The delivery attempt failed even though I was home,delivery_issue
+I am facing this issue: where should I enter a promotional code,general_enquiry
+I need support: what is the tracking status of my order?,order_status_enquiry
+I would like to ask: i want to initiate a return for my purchase.,return_request
+The product is different from the description This is causing a problem.,product_issue
+Please stop processing my purchase.,cancellation_request
+The material and finish are much worse than expected,product_issue
+Please tell me your product return procedure I would appreciate your guidance.,return_request
+The expected delivery date has passed and I still have not received the parcel,delivery_issue
+The returned product was accepted but the refund is pending.,refund_request
+Can you check the status of my order? Please advise me on the next step.,order_status_enquiry
+Please share the rules for returning a product,general_enquiry
+I am facing this issue: my refund has not reached my bank account,refund_request
+Are accessories included with the laptop?,general_enquiry
+I no longer want the delayed order and would like to cancel,cancellation_request
+Could you assist me? i want to return the laptop I purchased.,return_request
+Could you assist me? my product stopped working and I want warranty service.,warranty_request
+The operating system crashes repeatedly.,product_issue
+I want to exchange the laptop for another model Could you explain how to proceed?,exchange_request
+I want to withdraw my booking.,cancellation_request
+Please help me: the courier is not contacting me,delivery_issue
+My card was charged but the transaction failed.,payment_issue
+My package is stuck in transit.,delivery_issue
+I am facing this issue: the product quality is poor,product_issue
+I want my money back for the cancelled purchase.,refund_request
+How can I request a product exchange? Could you explain how to proceed?,exchange_request
+The product is incompatible with my device,product_issue
+Can you check why my order has not arrived?,delivery_issue
+I need help because the order is still being processed; is cancellation possible,cancellation_request
+I cannot use my saved card for payment.,payment_issue
+My refund has not reached my bank account,refund_request
+Is my order still being processed? I would appreciate your guidance.,order_status_enquiry
+Where can I find your product catalogue?,general_enquiry
+"Hi, i accidentally placed the same order twice; cancel one of them",cancellation_request
+My delivery has been rescheduled multiple times.,delivery_issue
+How do I delete my customer account?,account_issue
+Please help me: the login page rejects my correct username and password Please check this for me.,login_issue
+I need assistance with a delayed refund.,refund_request
+I would like to ask: i want to know the current status of my purchase.,order_status_enquiry
+Please help me: has my order been confirmed?,order_status_enquiry
+I am facing this issue: what is the expected date for my refund,refund_request
+The specifications of the delivered item do not match the listing What should I do next?,product_issue
+I would like to ask: i want the same product in a different colour.,exchange_request
+When can I expect my order to be shipped?,order_status_enquiry
+I accidentally placed the same order twice; cancel one of them,cancellation_request
+Could you assist? the tracking page shows an address I never entered,delivery_issue
+"Hi, i want to cancel my order Please check this for me.",cancellation_request
+I am contacting support because i want to exchange the laptop for another model.,exchange_request
+The refund status is still pending,refund_request
+Only part of my order was delivered,delivery_issue
+My returned money has not arrived.,refund_request
+The laptop hinge makes a clicking sound.,product_issue
+I want to know if my order has been packed.,order_status_enquiry
+I need support: i want to know the warranty coverage for my purchase.,warranty_request
+When will I receive my money back?,refund_request
+I changed my mind and want to return the item.,return_request
+Could you assist me? is my laptop still covered under warranty?,warranty_request
+I ordered the wrong model and need an exchange.,exchange_request
+Please help me: please return the money for the order I cancelled,refund_request
+Please help me: i cannot locate the settings for this feature Please check this for me.,general_enquiry
+The product quality is poor,product_issue
+There are two charges on my statement for the same purchase,payment_issue
+How can I request a product exchange? Please advise me on the next step.,exchange_request
+I need a different model instead of this one.,exchange_request
+Please arrange an exchange for my order Could you explain how to proceed?,exchange_request
+Could you assist me? can I exchange my laptop for a higher configuration?,exchange_request
+I selected the wrong configuration and want to cancel.,cancellation_request
+I am contacting support because i want to return the laptop I purchased.,return_request
+I need support: is my laptop still covered under warranty?,warranty_request
+I am contacting support because can you check the status of my order?,order_status_enquiry
+I need help because please tell me how to edit the username on my account,account_issue
+The speakers are producing distorted sound.,product_issue
+The name shown in my profile is wrong,account_issue
+Please help me: please tell me your product return procedure.,return_request
+How can I update my registered phone number?,account_issue
+Can I update my profile from the website?,account_issue
+I want to initiate a return for my purchase.,return_request
+I want to change the email linked to my account Can you look into this?,account_issue
+My refund has not reached my bank account This is causing a problem.,refund_request
+Can I exchange my product for a different variant? I would appreciate your guidance.,exchange_request
+Could you assist me? i received the wrong size and want an exchange.,exchange_request
+I want to change my account username,account_issue
+The charging port feels loose.,product_issue
+Could you assist me? i would like to send this item back.,return_request
+I do not want the upcoming renewal.,cancellation_request
+I need help changing my account settings.,account_issue
+I need support: i want to know the current status of my purchase.,order_status_enquiry
+Where can I find the feature settings Can you look into this?,general_enquiry
+Can I return an unopened product? I would appreciate your guidance.,return_request
+I am unable to complete the payment through UPI.,payment_issue
+Can I get an update about my order?,order_status_enquiry
+Do you offer free delivery?,general_enquiry
+I need help because the product is incompatible with my device,product_issue
+The graphics performance is much slower than expected.,product_issue
+I cannot complete payment using net banking,payment_issue
+I am unable to sign in from my new device.,login_issue
+My transaction reference shows success but the order is unpaid.,payment_issue
+Please provide an update on my purchase.,order_status_enquiry
+My device becomes very slow after an update.,product_issue
+How can I edit my saved contact details?,account_issue
+Could you assist? the transaction timed out after I paid,payment_issue
+I am contacting support because can I exchange my laptop for a higher configuration?,exchange_request
+Is the battery covered under warranty?,warranty_request
+I want to return the laptop I purchased Please let me know what I should do.,return_request
+My parcel was crushed when it was delivered,delivery_issue
+The login verification code is incorrect.,login_issue
+Please close my account and remove my profile This is causing a problem.,account_issue
+How can I claim my product warranty? Please let me know what I should do.,warranty_request
+Can I change the mobile number on my profile?,account_issue
+I am contacting support because what is the warranty period for this laptop?,warranty_request
+Please cancel the order I placed today,cancellation_request
+The checkout system is not accepting my payment.,payment_issue
+Why is my refund taking so long?,refund_request
+I need support: what is the warranty period for this laptop?,warranty_request
+I would like to ask: how can I claim my product warranty?,warranty_request
+My parcel has not arrived despite the tracking estimate.,delivery_issue
+My laptop is experiencing graphics glitches.,product_issue
+"I would like to ask: the product does not meet my expectations, so I want to return it.",return_request
+"Hi, i get signed out as soon as I log in",login_issue
+Please help me: i want to know the current status of my purchase.,order_status_enquiry
+"Money left my bank account, but the order page still says payment pending",payment_issue
+"Hi, the main feature stopped working after setup",product_issue
+I am facing this issue: my refund request has been waiting for approval for days,refund_request
+"Please remove a single product from the order, not the whole order This is causing a problem.",cancellation_request
+I am contacting support because i want to know the current status of my purchase.,order_status_enquiry
+Is my order still being processed? Please let me know what I should do.,order_status_enquiry
+The expected delivery date has passed and I still have not received the parcel Please guide me.,delivery_issue
+I am contacting support because i want to initiate a return for my purchase.,return_request
+Please stop the automatic renewal of my plan.,cancellation_request
+Can I change the email used for account notifications?,account_issue
+"Hi, tracking says delivered, but nothing reached my address",delivery_issue
+"Hi, the product I received is defective Please check this for me.",product_issue
+The delivery person has not called before attempting delivery This is causing a problem.,delivery_issue
+I want the same product in a different colour.,exchange_request
+What are your return policy conditions?,general_enquiry
+Can I get an exchange instead of a refund?,exchange_request
+I want to cancel my pending order.,cancellation_request
+I cannot sign in through my browser.,login_issue
+I need to register a warranty claim I would appreciate your guidance.,warranty_request
+"Hi, the one-time password is not arriving on my phone",login_issue
+My shipment was sent back without my approval.,delivery_issue
+I would like to ask: how do I get my laptop repaired under warranty?,warranty_request
+Please arrange an exchange for my order I would appreciate your guidance.,exchange_request
+I entered the correct password but login fails.,login_issue
+Could you assist? my account has been suspended,account_issue
+"I clicked the reset link, but it opens an invalid page",login_issue
+I need help because a feature of the product is not working,product_issue
+I cannot use UPI to pay for my order.,payment_issue
+I want my money back.,refund_request
+The delivery person has not called before attempting delivery,delivery_issue
+I am getting an invalid transaction error.,payment_issue
+Please cancel my recently placed order.,cancellation_request
+I want to know the warranty coverage for my purchase Please let me know what I should do.,warranty_request
+I would like to ask: my product stopped working and I want warranty service.,warranty_request
+I no longer want this order.,cancellation_request
+Has my package been dispatched? Please advise me on the next step.,order_status_enquiry
+The sign-in form is not accepting my credentials.,login_issue
+How can I return a product? Could you explain how to proceed?,return_request
+How can I contact customer support,general_enquiry
+I would like to ask: can I get an update about my order?,order_status_enquiry
+What is the warranty period for this laptop? I would appreciate your guidance.,warranty_request
+The money has not been credited to my account.,refund_request
+Is my order still being processed? Could you explain how to proceed?,order_status_enquiry
+I need help because i need to add another address to my account,account_issue
+I want to close my shopping account permanently.,account_issue
+I would like to ask: i received the product but want to return it.,return_request
+I changed my mind and want to cancel,cancellation_request
+I am contacting support because how can I return a product?,return_request
+Do you have any ongoing promotions?,general_enquiry
+Is my laptop still covered under warranty?,warranty_request
+I need support: how can I request a product exchange?,exchange_request
+Can you tell me when I will receive the refund?,refund_request
+How can I learn about your latest products?,general_enquiry
+What is the tracking status of my order? I would appreciate your guidance.,order_status_enquiry
+Please help me update my registered email address,account_issue
+Please help me: the item does not turn on after unpacking,product_issue
+My refund was sent to the wrong payment method.,refund_request
+The payment gateway is not opening.,payment_issue
+My delivery address is outdated.,account_issue
+Please help me: can you help me exchange my purchase?,exchange_request
+Where can I read your privacy policy?,general_enquiry
+Please tell me your product return procedure.,return_request
+I need help because i am not receiving the login OTP,login_issue
+I would like to ask: where is my order right now?,order_status_enquiry
+Can I exchange my laptop for a higher configuration? I would appreciate your guidance.,exchange_request
+I have to sign in again every time I reopen the app,login_issue
+The login page says verification failed.,login_issue
+I want to add a new phone number to my profile.,account_issue
+The courier has not attempted delivery yet.,delivery_issue
+The keyboard on my laptop is not responding.,product_issue
+I need support: please tell me your product return procedure.,return_request
+My account login page keeps loading,login_issue
+Cancel my subscription before the next billing date.,cancellation_request
+The delivery status says returned but I never received it.,delivery_issue
+Has my package been dispatched? I would appreciate your guidance.,order_status_enquiry
+Could you assist me? i need to register a warranty claim.,warranty_request
+"The product does not meet my expectations, so I want to return it I would appreciate your guidance.",return_request
+I need help with an incorrect payment charge.,payment_issue
+"My order failed, so I need the deducted amount returned",refund_request
+Please tell me your product return procedure Please advise me on the next step.,return_request
+Please help me: how can I return a product?,return_request
+I want to delete my account,account_issue
+"One item arrived, but the remaining items are missing",delivery_issue
+I would like to ask: has my package been dispatched?,order_status_enquiry
+Can you verify whether my refund was processed?,refund_request
+The delivery person did not come to my address.,delivery_issue
+I cannot save changes to my account.,account_issue
+I want to cancel the product I ordered yesterday.,cancellation_request
+I need help because i no longer want the delayed order and would like to cancel,cancellation_request
+When will my order be shipped? I would appreciate your guidance.,order_status_enquiry
+I want a refund for my cancelled order Can you look into this?,refund_request
+I want to know the current status of my purchase I would appreciate your guidance.,order_status_enquiry
+Please help me: the expected delivery date has passed and I still have not received the parcel,delivery_issue
+Where is my package? It is overdue.,delivery_issue
+What are your business hours,general_enquiry
+I need an update on my refund.,refund_request
+My payment failed while placing the order,payment_issue
+I want the same product in a different colour Please let me know what I should do.,exchange_request
+Net banking is not working at checkout,payment_issue
+My payment failed while placing the order Can you look into this?,payment_issue
+Please help me: how do I apply a coupon code,general_enquiry
+I would like to ask: can I exchange my product for a different variant?,exchange_request
+My profile changes are not being saved,account_issue
+What are your business hours This is causing a problem.,general_enquiry
+My laptop cannot connect to my home Wi-Fi.,product_issue
+I would like to replace this item with another model Could you explain how to proceed?,exchange_request
+"Hi, please refund the amount charged for the failed order",refund_request
+"Hi, my refund destination appears to be incorrect",refund_request
+Are your products available in different colours?,general_enquiry
+I need to register a warranty claim Please let me know what I should do.,warranty_request
+Cancel my order before it is shipped,cancellation_request
+Has my package been dispatched? Could you explain how to proceed?,order_status_enquiry
+The website keeps logging me out.,login_issue
+Can you check whether my device is under warranty?,warranty_request
+Please process my repayment.,refund_request
+I am facing this issue: the product is different from the description,product_issue
+The password reset link is not working.,login_issue
+I cannot sign in using Google,login_issue
+I would like to know whether students get a discount This is causing a problem.,general_enquiry
+The refund amount is missing from my bank account.,refund_request
+"The returned item was received, but I have not received the refund Can you look into this?",refund_request
+Could you assist? i want to know the available payment options,general_enquiry
+I am contacting support because is my order still being processed?,order_status_enquiry
+Has my order been confirmed? Please advise me on the next step.,order_status_enquiry
+I selected the wrong product and want to cancel.,cancellation_request
+Could you assist me? is my order still being processed?,order_status_enquiry
+My card payment is pending for several hours.,payment_issue
+What is the tracking status of my order? Could you explain how to proceed?,order_status_enquiry
+"Could you assist? money left my bank account, but the order page still says payment pending",payment_issue
+My payment reversal has not happened.,refund_request
+I want to know the current status of my purchase Please advise me on the next step.,order_status_enquiry
+Please help me recover the money from my cancelled order.,refund_request
+Please help me: is my laptop still covered under warranty?,warranty_request
+Could you assist? the app does not remember my login,login_issue
+I want to initiate a return for my purchase Please advise me on the next step.,return_request
+"Hi, the payment gateway showed an error",payment_issue
+The item has physical damage,product_issue
+The tracking page shows an address I never entered,delivery_issue
+Please help me: can I exchange my laptop for a higher configuration?,exchange_request
+I am contacting support because can you check whether my device is under warranty?,warranty_request
+Please help me: i changed my mind and want to cancel,cancellation_request
+I was charged an unexpected additional amount.,payment_issue
+The courier delivered my parcel to the wrong address.,delivery_issue
+"Could you assist me? the product does not meet my expectations, so I want to return it.",return_request
+Please help me: the refund status is still pending,refund_request
+My credit card payment is being declined.,payment_issue
+I am facing this issue: my saved address disappeared,account_issue
+How can I contact customer support?,general_enquiry
+Could you assist me? i want to know the current status of my purchase.,order_status_enquiry
+I am contacting support because is my laptop still covered under warranty?,warranty_request
+Can you arrange a return for my order? I would appreciate your guidance.,return_request
+The payment option disappeared during checkout.,payment_issue
+Can you stop my order before it is dispatched?,cancellation_request
+Do you offer business or bulk purchase pricing?,general_enquiry
+The website keeps asking me to pay again.,payment_issue
+My laptop does not detect the external monitor.,product_issue
+The one-time password is not arriving.,login_issue
+I need help because can you check why my shipment is taking longer than expected,delivery_issue
+"Hi, the product overheats during normal use",product_issue
+I want to stop my subscription from next month.,cancellation_request
+Could you assist? my account was temporarily blocked after I tried signing in,login_issue
+I cannot access my account using the saved password.,login_issue
+The payment succeeded but I did not receive an order number,payment_issue
+The main feature stopped working after setup,product_issue
+How do I apply a coupon code,general_enquiry
+How can I claim my product warranty?,warranty_request
+I would like to ask: can you check the status of my order?,order_status_enquiry
+I no longer need this item and would like to return it.,return_request
+I get signed out as soon as I log in,login_issue
+The order is still being processed; is cancellation possible,cancellation_request
+I am contacting support because how can I request a product exchange?,exchange_request
+I cannot update my billing address.,account_issue
+Can I have multiple delivery addresses?,account_issue
+I need support: how can I return a product?,return_request
+I want to cancel the order before dispatch.,cancellation_request
+Do you provide student discounts?,general_enquiry
+I am facing this issue: i want to cancel my service booking,cancellation_request
+Can you check why my shipment is taking longer than expected,delivery_issue
+What documents are needed for a business purchase?,general_enquiry
+Could you assist? i received only a partial refund,refund_request
+My package is missing after being marked out for delivery.,delivery_issue
+"Hi, my order has not arrived yet Please check this for me.",delivery_issue
+My account profile information is incorrect,account_issue
+"Hi, where can I find the feature settings Please check this for me.",general_enquiry
+My payment was reversed immediately.,payment_issue
+I keep getting an incorrect password message.,login_issue
+Please help me: please cancel the order I placed today Please check this for me.,cancellation_request
+I need support: i would like to replace this item with another model.,exchange_request
+"Hi, my order has not arrived yet",delivery_issue
+I am facing this issue: please close my account and remove my profile,account_issue
+I need help because the website declines my debit card every time I try to pay,payment_issue
+The refund is not visible in my bank statement.,refund_request
+The refund was sent to the wrong payment method,refund_request
+The checkout page crashed during payment.,payment_issue
+How can I return a product? I would appreciate your guidance.,return_request
+Please investigate my missing refund.,refund_request
+My account has been suspended,account_issue
+My product stopped working and I want warranty service Please advise me on the next step.,warranty_request
+Can I get an update about my order? I would appreciate your guidance.,order_status_enquiry
+Can you help me exchange my purchase?,exchange_request
+The delivery agent refuses to deliver to my location.,delivery_issue
+I want to cancel my order,cancellation_request
+Can I place an order over the phone?,general_enquiry
+The payment button does not respond.,payment_issue
+The touchpad has stopped working.,product_issue
+Has my package been dispatched?,order_status_enquiry
+My card payment keeps getting declined What should I do next?,payment_issue
+The name shown in my profile is wrong What should I do next?,account_issue
+Please help me: i need to know when my refund will be credited,refund_request
+Where is my order right now?,order_status_enquiry
+"The order has not shipped yet, so I want to stop it",cancellation_request
+I want to replace my current item with another variant.,exchange_request
+What is the tracking status of my order?,order_status_enquiry
+My saved billing details have disappeared.,account_issue
+Please help me: how can I claim my product warranty?,warranty_request
+I was charged twice for the same purchase.,payment_issue
+An accessory that should be included is missing from the box This is causing a problem.,product_issue
+My card payment keeps getting declined,payment_issue
+My prepaid wallet payment is not going through.,payment_issue
+I changed my mind about this purchase.,cancellation_request
+I would like to ask: is my laptop still covered under warranty?,warranty_request
+"Support said the refund would be processed, but I have no update",refund_request
+Please explain the warranty coverage available,general_enquiry
+My account password is not being accepted.,login_issue
+Please tell me your product return procedure Could you explain how to proceed?,return_request
+I want to exchange the laptop for another model I would appreciate your guidance.,exchange_request
+I was charged twice for one order,payment_issue
+Can you stop the shipment and cancel my order?,cancellation_request
+The refund amount does not match what I paid.,refund_request
+I need help because the refunded amount is lower than what I paid,refund_request
+I have not received my order yet.,delivery_issue
+Can you check the status of my order? Please let me know what I should do.,order_status_enquiry
+I need help because the wallet balance was deducted but payment failed,payment_issue
+Can you tell me whether my order is confirmed?,order_status_enquiry
+Do you provide setup assistance?,general_enquiry
+Please help me request a different product variant.,exchange_request
+Could you assist me? can you check whether my device is under warranty?,warranty_request
+The account settings page gives me an error,account_issue
+I want the same product in a different colour Please advise me on the next step.,exchange_request
+My account is displaying someone else's details.,account_issue
+I cannot enter my card details on the payment page.,payment_issue
+My tracking says delivered but I did not receive anything.,delivery_issue
+I returned the product but have not received my money.,refund_request
+How can I claim my product warranty? I would appreciate your guidance.,warranty_request
+I want to change the email linked to my account,account_issue
+Please cancel my subscription renewal.,cancellation_request
+"Hi, is it possible to edit the shipping address after checkout",general_enquiry
+My package was delivered to my neighbour without permission.,delivery_issue
+Please help me: what is the warranty period for this laptop?,warranty_request
+The Google sign-in option is not completing authentication,login_issue
+My payment confirmation has not appeared.,payment_issue
+Could you assist? my card payment keeps getting declined,payment_issue
+My package has been missing for several days.,delivery_issue
+I need help because can I change my delivery address after ordering,general_enquiry
+When will my order be shipped? Please let me know what I should do.,order_status_enquiry
+My refund transaction failed.,refund_request
+"Please help me: the courier marked me unavailable, but I was at home",delivery_issue
+The parcel arrived later than the estimated date.,delivery_issue
+I need to stop the subscription renewal,cancellation_request
+I am facing this issue: i was promised a refund but got no confirmation,refund_request
+I received the product but want to return it Could you explain how to proceed?,return_request
+The item does not turn on after unpacking,product_issue
+How do I change the name displayed on my profile?,account_issue
+I have placed an order and want to check its progress.,order_status_enquiry
+How can I request a product exchange? Please let me know what I should do.,exchange_request
+My saved account preferences are missing.,account_issue
+I received the product but want to return it Please let me know what I should do.,return_request
+I am contacting support because please arrange an exchange for my order.,exchange_request
+The keyboard backlight is not turning on.,product_issue
+The delivery person did not contact me.,delivery_issue
+I am contacting support because when will my order be shipped?,order_status_enquiry
+My wallet was charged even though the transaction failed,payment_issue
+I want to delete my account Please guide me.,account_issue
+Could you assist me? can you help me exchange my purchase?,exchange_request
+I am contacting support because can I get an update about my order?,order_status_enquiry
+My transaction failed after entering the OTP.,payment_issue
+I cannot access my account after entering the password.,login_issue
+My transaction failed even though the amount was debited.,payment_issue
+The login page rejects my correct username and password,login_issue
+Please help me: please help me update my registered email address,account_issue
+"The return was accepted, but the refund is still missing",refund_request
+I am contacting support because has my package been dispatched?,order_status_enquiry
+The order is taking too long; cancel it,cancellation_request
+I want to change my account details.,account_issue
+My product stopped working and I want warranty service I would appreciate your guidance.,warranty_request
+The refund was initiated but not received.,refund_request
+I am contacting support because i need to register a warranty claim.,warranty_request
+Can you check the status of my order? I would appreciate your guidance.,order_status_enquiry
+How can I learn about your available services?,general_enquiry
+Can I buy accessories separately?,general_enquiry
+What is the tracking status of my order? Please advise me on the next step.,order_status_enquiry
+Please explain the warranty claim procedure.,warranty_request
+My laptop shuts down without warning.,product_issue
+Please arrange an exchange for my order.,exchange_request
+I would like to send this item back.,return_request
+The product I received is defective Can you look into this?,product_issue
+Please return the money for the order I cancelled,refund_request
+Please help me: i received a payment confirmation but no order confirmation,payment_issue
+Could you assist? i need an update on my delayed shipment,delivery_issue
+I received only a partial refund What should I do next?,refund_request
+I was promised a refund but got no confirmation,refund_request
+Can you help me exchange my purchase? Please advise me on the next step.,exchange_request
+My shipment has been delayed again.,delivery_issue
+Could you assist me? i want to initiate a return for my purchase.,return_request
+Where should I enter a promotional code,general_enquiry
+The laptop battery is not charging fully.,product_issue
+How long does the product exchange process take?,exchange_request
+I would like to replace this item with another model.,exchange_request
+The tracking page has not updated This is causing a problem.,delivery_issue
+I received the wrong delivery address update,delivery_issue
+I am contacting support because i received the product but want to return it.,return_request
+The login screen keeps refreshing.,login_issue
+I need support: is my order still being processed?,order_status_enquiry
+"Please remove a single product from the order, not the whole order",cancellation_request
+The amount was deducted but the order is still unpaid This is causing a problem.,payment_issue
+Please help me: can you arrange a return for my order?,return_request
+I cannot complete checkout using net banking.,payment_issue
+I have not received the refund confirmation.,refund_request
+Where can I submit a warranty claim? Could you explain how to proceed?,warranty_request
+Can I get an update about my order? Please advise me on the next step.,order_status_enquiry
+Where can I submit a warranty claim? Please advise me on the next step.,warranty_request
+Could you assist me? please tell me your product return procedure.,return_request
+Has my package been dispatched? Please let me know what I should do.,order_status_enquiry
+I want to return the laptop I purchased I would appreciate your guidance.,return_request
+The webcam is not working during video calls.,product_issue
+I need help because please share the rules for returning a product,general_enquiry
+Has my order been confirmed? I would appreciate your guidance.,order_status_enquiry
+I would like to ask: can I return an unopened product?,return_request
+I need support: my product stopped working and I want warranty service.,warranty_request
+My laptop does not recognize the charger.,product_issue
+Please help me: i want to exchange the laptop for another model.,exchange_request
+I need help because there is a crack on the product body,product_issue
+How can I contact the warranty service centre?,warranty_request
+I am facing this issue: the password reset link is not working,login_issue
+The fingerprint sensor is not detecting my finger.,product_issue
+The website rejected my payment.,payment_issue
+How can I request a product exchange?,exchange_request
+Could you assist? can I cancel an order that is being prepared,cancellation_request
+There are two charges on my statement for the same purchase Can you look into this?,payment_issue
+Could you assist? do you provide a warranty for this product,general_enquiry
+Please tell me your product return procedure Please let me know what I should do.,return_request
+Please guide me through the return process.,return_request
+Please close my account and remove my profile,account_issue
+What are the available customer support channels?,general_enquiry
+The courier service failed to deliver my order.,delivery_issue
+I am facing this issue: my account profile information is incorrect,account_issue
+The item has physical damage What should I do next?,product_issue
+I ordered the item accidentally and want to cancel.,cancellation_request
+I received only part of my refund.,refund_request
+I would like to ask: can you check whether my device is under warranty?,warranty_request
+I need help because the checkout timed out just after I confirmed the payment,payment_issue
+Can I purchase a gift for someone else?,general_enquiry
+I need support: i want to initiate a return for my purchase.,return_request
+My laptop is stuck on the startup logo.,product_issue
+I cancelled my order but have not received my money.,refund_request
+I received the wrong size and want an exchange I would appreciate your guidance.,exchange_request
+My order has not arrived yet,delivery_issue
+I want to stop this purchase.,cancellation_request
+The refund amount is incorrect.,refund_request
+I am facing this issue: i received the wrong delivery address update,delivery_issue
+Can I exchange my laptop for a higher configuration? Please advise me on the next step.,exchange_request
+Can I cancel an order that is being prepared,cancellation_request
+Please return the amount I paid.,refund_request
+I want to return the laptop I purchased Could you explain how to proceed?,return_request
+I selected the wrong variant. Can I exchange it?,exchange_request
+"The product does not meet my expectations, so I want to return it.",return_request
+Please help me: the item does not turn on after unpacking Please check this for me.,product_issue
+The laptop does not wake up from sleep mode.,product_issue
+I received a duplicate payment notification.,payment_issue
+The payment page keeps loading without completing.,payment_issue
+Is my order still being processed?,order_status_enquiry
+I need support: when will my order be shipped?,order_status_enquiry
+What is the warranty period for this laptop? Please advise me on the next step.,warranty_request
+I want to check my warranty eligibility.,warranty_request
+Is my laptop still covered under warranty? I would appreciate your guidance.,warranty_request
+Could you assist? i want to change my account username,account_issue
+My profile information is incorrect.,account_issue
+I was promised a refund that never arrived.,refund_request
+Does the warranty cover accidental damage?,warranty_request
+Please cancel the upcoming automatic renewal,cancellation_request
+I need to remove an address from my profile.,account_issue
+Please help me: can I exchange my product for a different variant?,exchange_request
+My refund request has been pending for days.,refund_request
+"Hi, i want a refund for my cancelled order",refund_request
+There is a crack on the product body,product_issue
+My device cannot detect Bluetooth headphones.,product_issue
+"Could you assist? i clicked the reset link, but it opens an invalid page",login_issue
+The updated profile details disappear when I refresh,account_issue
+I need to know when my refund will be credited,refund_request
+I am contacting support because how do I get my laptop repaired under warranty?,warranty_request
+My keyboard keys are typing incorrect characters.,product_issue
+I am facing this issue: i cannot complete payment using net banking,payment_issue
+Please process the outstanding refund.,refund_request
+The refund status is still pending Please guide me.,refund_request
+The USB ports are not recognizing my devices.,product_issue
+I want to deactivate my account.,account_issue
+"Could you assist? the refund was approved, but the amount is not credited yet",refund_request
+I am contacting support because where is my order right now?,order_status_enquiry
+Can I return an unopened product? Please advise me on the next step.,return_request
+I cannot log in even after resetting my password.,login_issue
+My product stopped working and I want warranty service.,warranty_request
+Do not dispatch my order.,cancellation_request
+I am still waiting for my parcel.,delivery_issue
+Do not ship my order. I want to cancel it.,cancellation_request
+I need support: i received the product but want to return it.,return_request
+My laptop has a hardware problem. Can I claim warranty?,warranty_request
+Please help me: the payment did not go through when I tried to place my order Please check this for me.,payment_issue
+I want to know the current status of my purchase Please let me know what I should do.,order_status_enquiry
+I am facing this issue: the payment succeeded but I did not receive an order number,payment_issue
+I am facing this issue: my parcel was crushed when it was delivered,delivery_issue
+"I need help because the return was accepted, but the refund is still missing",refund_request
+I would like to ask: what is the tracking status of my order?,order_status_enquiry
+I cannot attend the appointment and need to cancel the booking,cancellation_request
+What is the warranty period for this laptop? Please let me know what I should do.,warranty_request
+My laptop is running much slower than before.,product_issue
+I am facing this issue: cancel my order before it is shipped,cancellation_request
+The audio jack is not detecting my earphones.,product_issue
+I need support: my package has not arrived by the promised date.,delivery_issue
+Can I download product specifications?,general_enquiry
+The product is different from the description,product_issue
+Please return the money for the order I cancelled Please guide me.,refund_request
+I want to exchange the laptop for another model.,exchange_request
+I don't want to continue with this purchase.,cancellation_request
+How can I save a second delivery address in my profile,account_issue
+"Money left my bank account, but the order page still says payment pending What should I do next?",payment_issue
+The sign-in page shows an unexpected error.,login_issue
+I would like to ask: can I exchange my laptop for a higher configuration?,exchange_request
+How do I get my laptop repaired under warranty? I would appreciate your guidance.,warranty_request
+Can you help me exchange my purchase? Please let me know what I should do.,exchange_request
+My order is stuck in transit.,delivery_issue
+Could you assist? the delivery address I saved is no longer visible,account_issue
+I need support: i received the wrong size and want an exchange.,exchange_request
+Where can I read the return policy What should I do next?,general_enquiry
+I want to exchange the laptop for another model Please advise me on the next step.,exchange_request
+I want to manage the addresses saved in my account.,account_issue
+I need help because please cancel the duplicate order,cancellation_request
+Please help me: can you check the status of my order?,order_status_enquiry
+"Hi, i want to change the email linked to my account",account_issue
+I want to initiate a return for my purchase I would appreciate your guidance.,return_request
+I received someone else's package.,delivery_issue
+Where can I submit a warranty claim? I would appreciate your guidance.,warranty_request
+Can you check whether my device is under warranty? I would appreciate your guidance.,warranty_request
+How can I claim my product warranty? Could you explain how to proceed?,warranty_request
+Please refund the amount charged for the failed order,refund_request
+"Hi, i cannot access my account settings",account_issue
+How do I edit my customer information?,account_issue
+Please help me: please arrange an exchange for my order.,exchange_request
+Could you assist me? when will my order be shipped?,order_status_enquiry
+I am having trouble logging in through the mobile app.,login_issue
+The website displays a login authentication error.,login_issue
+"Hi, i ordered the wrong product by mistake; please cancel it",cancellation_request
+I want to know the warranty coverage for my purchase I would appreciate your guidance.,warranty_request
+I need help because i see a suspended account message when I open my profile,account_issue
+Where can I read the return policy,general_enquiry
+The password reset link is not working,login_issue
+Please help me: what is the correct way to reach your support team,general_enquiry
+I want to cancel my service booking,cancellation_request
+I want to swap this product for another one.,exchange_request
+I received the wrong size and want an exchange Please advise me on the next step.,exchange_request
+I want a refund for my cancelled order,refund_request
+Is my laptop still covered under warranty? Could you explain how to proceed?,warranty_request
+Do you offer discounts on bulk orders?,general_enquiry
+How many days do I have to return a product?,return_request
+I would like to ask: please tell me your product return procedure.,return_request
+The address update option is not working.,account_issue
+What is the warranty period for this laptop?,warranty_request
+My account is showing the wrong name.,account_issue
+Could you assist me? where can I submit a warranty claim?,warranty_request
+I need to change my customer profile details.,account_issue
+I received a payment confirmation but no order confirmation,payment_issue
+I need support: has my order been confirmed?,order_status_enquiry
+Please help me send the product back.,return_request
+Could you assist me? i want to exchange the laptop for another model.,exchange_request
+Please terminate my subscription.,cancellation_request
+I want to discontinue my monthly subscription.,cancellation_request
+I placed the order by mistake and want to withdraw it.,cancellation_request
+The one-time password is not arriving on my phone Can you look into this?,login_issue
+My UPI transaction is still pending.,payment_issue
+I need support: i want to return the laptop I purchased.,return_request
+Can you cancel my purchase request?,cancellation_request
+I want to know the warranty coverage for my purchase Could you explain how to proceed?,warranty_request
+The power button is not responding properly.,product_issue
+My account has been suspended What should I do next?,account_issue
+Please help me: please cancel my recently placed order.,cancellation_request
+My laptop becomes extremely hot during normal use.,product_issue
+My bank shows a debit but the website shows unpaid.,payment_issue
+My login attempt keeps returning to the sign-in page.,login_issue
+Has my order been confirmed? Please let me know what I should do.,order_status_enquiry
+I need help because i cannot update my phone number,account_issue
+I am contacting support because where can I submit a warranty claim?,warranty_request
+I need support: can I exchange my laptop for a higher configuration?,exchange_request
+"I am facing this issue: please remove a single product from the order, not the whole order",cancellation_request
+I need help because the package shows delivered but I did not receive it,delivery_issue
+The payment page keeps showing an error.,payment_issue
+How long does it take to get my money back?,refund_request
+Are refurbished products available?,general_enquiry
+I cannot sign in using my registered email.,login_issue
+I need help because i selected the wrong item and need to cancel,cancellation_request
+Do you provide corporate purchasing services?,general_enquiry
+Where is my order right now? Please let me know what I should do.,order_status_enquiry
+Can you check whether my device is under warranty? Could you explain how to proceed?,warranty_request
+Please help me: can you check whether my device is under warranty?,warranty_request
+The checkout timed out just after I confirmed the payment,payment_issue
+Could you assist me? i want to know the warranty coverage for my purchase.,warranty_request
+I cannot get past the sign-in screen because it keeps spinning,login_issue
+The payment gateway is showing a server error.,payment_issue
+The screen brightness cannot be adjusted.,product_issue
+The product overheats during normal use,product_issue
+Please help me update my registered email address Please guide me.,account_issue
+The payment gateway showed an error,payment_issue
+Can I request a product demonstration?,general_enquiry
+The courier keeps postponing the delivery.,delivery_issue
+I need support: how can I claim my product warranty?,warranty_request
+A feature of the product is not working,product_issue
+The password recovery process is not completing.,login_issue
+Could you assist? where can I read the return policy,general_enquiry
+Can I exchange my laptop for a higher configuration? Could you explain how to proceed?,exchange_request
+Could you assist me? has my order been confirmed?,order_status_enquiry
+I returned the product and need my money back,refund_request
+Can I update my account without creating a new one?,account_issue
+What payment methods do you accept?,general_enquiry
+Can I get a quotation before purchasing?,general_enquiry
+"I no longer need this purchase, so please cancel it",cancellation_request
+The website says my session is invalid.,login_issue
+The website says my password is incorrect Please guide me.,login_issue
+I need support: where can I submit a warranty claim?,warranty_request
+The refund status has not changed.,refund_request
+I accidentally ordered the wrong item. Please cancel it.,cancellation_request
+I received the wrong product model,product_issue
+Could you assist me? how do I get my laptop repaired under warranty?,warranty_request
+I received less money than expected as a refund.,refund_request
+Please help me: i received the product but want to return it.,return_request
+Please help me: please cancel the order I placed today,cancellation_request
+"The courier marked me unavailable, but I was at home",delivery_issue
+The payment verification failed.,payment_issue
+Can you tell me the estimated dispatch date?,order_status_enquiry
+The battery drains very quickly.,product_issue
+I would like to ask: can you arrange a return for my order?,return_request
+Please help me: where can I submit a warranty claim?,warranty_request
+My order shows delivered but I never received it.,delivery_issue
+Could you assist me? what is the warranty period for this laptop?,warranty_request
+Which payment methods do you accept,general_enquiry
+Can I exchange my product for a different variant? Please advise me on the next step.,exchange_request
+The microphone is not picking up my voice.,product_issue
+My screen flickers whenever I open an application.,product_issue
+My refund request has been waiting for approval for days This is causing a problem.,refund_request
+The save button does not update my registered mobile number Can you look into this?,account_issue
+"Hi, my wallet was charged even though the transaction failed",payment_issue
+Can you arrange a return for my order? Please let me know what I should do.,return_request
+The parcel has been sitting at the same hub for days,delivery_issue
+My device is malfunctioning during the warranty period.,warranty_request
+I am facing this issue: the Google sign-in option is not completing authentication,login_issue
+Please cancel the order I placed today Please guide me.,cancellation_request
+The display has developed a bright line.,product_issue
+My account profile is showing outdated information.,account_issue
+My bank account was debited but payment is unsuccessful.,payment_issue
+"Hi, i need to stop the subscription renewal",cancellation_request
+The payment did not go through when I tried to place my order,payment_issue

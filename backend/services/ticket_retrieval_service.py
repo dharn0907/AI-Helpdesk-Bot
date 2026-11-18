@@ -1,5 +1,5 @@
 
-"""Historical knowledge base retrieval service."""
+"""Historical and agent-approved ticket resolution retrieval."""
 
 import json
 from pathlib import Path
@@ -7,8 +7,14 @@ from pathlib import Path
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 
+from database.database import SessionLocal
+from database.models import Company, TicketResolutionReview
 
-# Load the knowledge base
+
+# ------------------------------------------------
+# LEGACY JSON KNOWLEDGE BASE
+# ------------------------------------------------
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 KNOWLEDGE_BASE_PATH = BASE_DIR / "data" / "knowledge_base.json"
 
@@ -16,7 +22,10 @@ with open(KNOWLEDGE_BASE_PATH, "r", encoding="utf-8") as file:
     knowledge_base = json.load(file)
 
 
-# Load the sentence embedding model
+# ------------------------------------------------
+# SHARED SEMANTIC EMBEDDING MODEL
+# ------------------------------------------------
+
 print("Loading sentence transformer model...")
 
 model = SentenceTransformer("all-MiniLM-L6-v2")
@@ -24,10 +33,7 @@ model = SentenceTransformer("all-MiniLM-L6-v2")
 print("Sentence transformer model loaded successfully!")
 
 
-# Prepare complaint embeddings
-complaints = [
-    item["problem"] for item in knowledge_base
-]
+complaints = [item["problem"] for item in knowledge_base]
 
 complaint_embeddings = model.encode(
     complaints,
@@ -35,25 +41,114 @@ complaint_embeddings = model.encode(
 )
 
 
-def retrieve_solution(user_message: str, intent: str):
-    """Find the most similar solved complaint."""
+# ------------------------------------------------
+# NEW: AGENT-APPROVED DATABASE RETRIEVAL
+# ------------------------------------------------
 
-    if not user_message.strip():
+def retrieve_approved_solution(
+    user_message: str,
+    intent: str,
+    threshold: float = 0.50,
+):
+    """
+    Retrieve the most similar agent-approved resolution
+    belonging to the currently active company.
+
+    Rejected and unreviewed resolutions are excluded.
+    """
+
+    if not user_message or not user_message.strip():
         return None
 
-    # Convert the new complaint into an embedding
+    db = SessionLocal()
+
+    try:
+        company = (
+            db.query(Company)
+            .filter(Company.is_active.is_(True))
+            .order_by(Company.id.asc())
+            .first()
+        )
+
+        if not company:
+            return None
+
+        approved_records = (
+            db.query(TicketResolutionReview)
+            .filter(
+                TicketResolutionReview.company_id == company.id,
+                TicketResolutionReview.approval_status == "approved",
+                TicketResolutionReview.intent == intent,
+                TicketResolutionReview.approved_solution.isnot(None),
+                TicketResolutionReview.approved_solution != "",
+            )
+            .all()
+        )
+
+        if not approved_records:
+            return None
+
+        approved_complaints = [
+            record.complaint for record in approved_records
+        ]
+
+        user_embedding = model.encode(
+            [user_message],
+            convert_to_numpy=True
+        )
+
+        approved_embeddings = model.encode(
+            approved_complaints,
+            convert_to_numpy=True
+        )
+
+        similarities = cosine_similarity(
+            user_embedding,
+            approved_embeddings
+        )[0]
+
+        best_index = int(similarities.argmax())
+        best_score = float(similarities[best_index])
+
+        if best_score < threshold:
+            return None
+
+        matched_record = approved_records[best_index]
+
+        return {
+            "ticket_id": matched_record.ticket_id,
+            "problem": matched_record.complaint,
+            "solution": matched_record.approved_solution,
+            "intent": matched_record.intent,
+            "company_id": matched_record.company_id,
+            "similarity": round(best_score, 4),
+            "source": "agent_approved_resolution",
+        }
+
+    finally:
+        db.close()
+
+
+# ------------------------------------------------
+# EXISTING: LEGACY JSON RETRIEVAL
+# ------------------------------------------------
+
+def retrieve_solution(user_message: str, intent: str):
+    """Find the most similar solved complaint in the legacy JSON KB."""
+
+    if not user_message or not user_message.strip():
+        return None
+
     user_embedding = model.encode(
         [user_message],
         convert_to_numpy=True
     )
 
-    # Calculate semantic similarity
     similarities = cosine_similarity(
         user_embedding,
         complaint_embeddings
     )[0]
 
-    # Only consider tickets with matching intent and solved status
     eligible_indices = [
         i for i, item in enumerate(knowledge_base)
         if item.get("intent") == intent
@@ -63,7 +158,6 @@ def retrieve_solution(user_message: str, intent: str):
     if not eligible_indices:
         return None
 
-    # Find the best matching eligible complaint
     best_index = max(
         eligible_indices,
         key=lambda i: similarities[i]
@@ -71,7 +165,6 @@ def retrieve_solution(user_message: str, intent: str):
 
     best_score = float(similarities[best_index])
 
-    # Initial experimental threshold
     if best_score < 0.50:
         return None
 
@@ -81,5 +174,6 @@ def retrieve_solution(user_message: str, intent: str):
         "ticket_id": matched_ticket["id"],
         "problem": matched_ticket["problem"],
         "solution": matched_ticket["solution"],
-        "similarity": round(best_score, 4)
+        "similarity": round(best_score, 4),
+        "source": "legacy_json_knowledge_base",
     }

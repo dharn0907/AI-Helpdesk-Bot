@@ -1,0 +1,389 @@
+﻿
+import unittest
+from unittest.mock import patch
+
+import main
+
+
+class TicketConversationTests(unittest.TestCase):
+
+    def setUp(self):
+        self.session_id = "test-ticket-conversation"
+        main.conversation_states.pop(self.session_id, None)
+
+        main.conversation_states[self.session_id] = {
+            "history": [],
+            "pending_ticket": {
+                "original_complaint": "My account login is failing.",
+                "additional_details": "",
+                "detail_messages": [],
+                "issue_summary": "Customer cannot log in.",
+                "intent": "ACCOUNT_ISSUE",
+                "intervention": "REQUIRED",
+                "intervention_confidence": 0.9,
+                "step": "additional_details",
+            },
+        }
+
+    def tearDown(self):
+        main.conversation_states.pop(self.session_id, None)
+
+    def send_message(self, message):
+        return main.chat({
+            "message": message,
+            "session_id": self.session_id,
+        })
+
+    @patch("main.interpret_ticket_message")
+    def test_add_relevant_detail(self, mock_interpret):
+        mock_interpret.return_value = {
+            "action": "ADD_DETAIL",
+            "confidence": 0.95,
+            "relevant_details": "The error appears after entering the password.",
+            "issue_summary": "Customer cannot log in because an error appears after password entry.",
+            "needs_clarification": False,
+            "clarification_question": "",
+        }
+
+        result = self.send_message(
+            "The error appears after entering my password."
+        )
+
+        pending = main.conversation_states[self.session_id]["pending_ticket"]
+
+        self.assertEqual(
+            pending["additional_details"],
+            "The error appears after entering the password.",
+        )
+        self.assertFalse(result["ticket_created"])
+        self.assertEqual(
+            result["conversation_status"],
+            "collecting_additional_details",
+        )
+
+    @patch("main.interpret_ticket_message")
+    def test_greeting_does_not_modify_ticket(self, mock_interpret):
+        mock_interpret.return_value = {
+            "action": "GREETING",
+            "confidence": 0.95,
+            "relevant_details": "",
+            "issue_summary": "",
+            "needs_clarification": False,
+            "clarification_question": "",
+        }
+
+        result = self.send_message("Hello")
+
+        pending = main.conversation_states[self.session_id]["pending_ticket"]
+
+        self.assertEqual(pending["step"], "additional_details")
+        self.assertEqual(pending["additional_details"], "")
+        self.assertFalse(result["ticket_created"])
+
+    @patch("main.interpret_ticket_message")
+    def test_unrelated_message_asks_for_direction(self, mock_interpret):
+        mock_interpret.return_value = {
+            "action": "UNRELATED",
+            "confidence": 0.95,
+            "relevant_details": "",
+            "issue_summary": "",
+            "needs_clarification": False,
+            "clarification_question": "",
+        }
+
+        result = self.send_message("What is the weather today?")
+
+        pending = main.conversation_states[self.session_id]["pending_ticket"]
+
+        self.assertEqual(
+            pending["step"],
+            "awaiting_ticket_direction",
+        )
+        self.assertTrue(result["awaiting_ticket_direction"])
+        self.assertFalse(result["ticket_created"])
+
+    def test_continue_resumes_detail_collection(self):
+        pending = main.conversation_states[self.session_id]["pending_ticket"]
+        pending["step"] = "awaiting_ticket_direction"
+
+        result = self.send_message("CONTINUE")
+
+        self.assertEqual(pending["step"], "additional_details")
+        self.assertFalse(result["ticket_created"])
+        self.assertEqual(
+            result["conversation_status"],
+            "collecting_additional_details",
+        )
+
+    def test_pause_preserves_pending_ticket(self):
+        pending = main.conversation_states[self.session_id]["pending_ticket"]
+        pending["step"] = "awaiting_ticket_direction"
+
+        result = self.send_message("PAUSE")
+
+        self.assertEqual(pending["step"], "paused")
+        self.assertIn(
+            "pending_ticket",
+            main.conversation_states[self.session_id],
+        )
+        self.assertFalse(result["ticket_created"])
+        self.assertEqual(result["conversation_status"], "ticket_paused")
+
+    def test_cancel_clears_pending_ticket(self):
+        pending = main.conversation_states[self.session_id]["pending_ticket"]
+        pending["step"] = "awaiting_ticket_direction"
+
+        result = self.send_message("CANCEL")
+
+        self.assertNotIn(
+            "pending_ticket",
+            main.conversation_states[self.session_id],
+        )
+        self.assertFalse(result["ticket_created"])
+        self.assertEqual(result["conversation_status"], "ticket_cancelled")
+
+    @patch("services.ticket_conversation_service.llm")
+    def test_pause_does_not_modify_issue_summary(self, mock_llm):
+        from services.ticket_conversation_service import (
+            interpret_ticket_message,
+        )
+
+        mock_llm.invoke.return_value.content = """
+        {
+            "action": "PAUSE",
+            "confidence": 1.0,
+            "relevant_details": "I will continue tomorrow.",
+            "issue_summary": "Customer wants to continue tomorrow.",
+            "needs_clarification": false,
+            "clarification_question": ""
+        }
+        """
+
+        pending = main.conversation_states[self.session_id]["pending_ticket"]
+        original_summary = pending["issue_summary"]
+
+        result = interpret_ticket_message(
+            customer_message="I will continue tomorrow.",
+            pending_ticket=pending,
+        )
+
+        self.assertEqual(result["action"], "PAUSE")
+        self.assertEqual(result["issue_summary"], "")
+        self.assertEqual(result["relevant_details"], "")
+        self.assertEqual(pending["issue_summary"], original_summary)
+
+    @patch("services.ticket_conversation_service.llm")
+    def test_cancel_does_not_modify_issue_summary(self, mock_llm):
+        from services.ticket_conversation_service import (
+            interpret_ticket_message,
+        )
+
+        mock_llm.invoke.return_value.content = """
+        {
+            "action": "CANCEL",
+            "confidence": 1.0,
+            "relevant_details": "Cancel my request.",
+            "issue_summary": "Customer cancelled the request.",
+            "needs_clarification": false,
+            "clarification_question": ""
+        }
+        """
+
+        pending = main.conversation_states[self.session_id]["pending_ticket"]
+        original_summary = pending["issue_summary"]
+
+        result = interpret_ticket_message(
+            customer_message="Cancel my request.",
+            pending_ticket=pending,
+        )
+
+        self.assertEqual(result["action"], "CANCEL")
+        self.assertEqual(result["issue_summary"], "")
+        self.assertEqual(result["relevant_details"], "")
+        self.assertEqual(pending["issue_summary"], original_summary)
+
+    def test_summary_yes_moves_to_email_collection(self):
+        pending = main.conversation_states[self.session_id]["pending_ticket"]
+        pending["step"] = "awaiting_summary_confirmation"
+
+        result = self.send_message("YES")
+
+        self.assertEqual(pending["step"], "customer_email")
+        self.assertTrue(result["awaiting_email"])
+        self.assertFalse(result["ticket_created"])
+
+    def test_summary_no_returns_to_detail_collection(self):
+        pending = main.conversation_states[self.session_id]["pending_ticket"]
+        pending["step"] = "awaiting_summary_confirmation"
+
+        result = self.send_message("NO")
+
+        self.assertEqual(pending["step"], "additional_details")
+        self.assertTrue(result["awaiting_additional_details"])
+        self.assertFalse(result["ticket_created"])
+
+    @patch("main.interpret_ticket_message")
+    def test_customer_correction_is_saved(self, mock_interpret):
+        pending = main.conversation_states[self.session_id]["pending_ticket"]
+        pending["step"] = "awaiting_summary_confirmation"
+
+        self.send_message("NO")
+
+        mock_interpret.return_value = {
+            "action": "ADD_DETAIL",
+            "confidence": 0.95,
+            "relevant_details": "The error occurs only on mobile.",
+            "issue_summary": "Customer cannot log in; the error occurs only on mobile.",
+            "needs_clarification": False,
+            "clarification_question": "",
+        }
+
+        result = self.send_message("The error occurs only on mobile.")
+
+        self.assertIn(
+            "The error occurs only on mobile.",
+            pending["additional_details"],
+        )
+        self.assertFalse(result["ticket_created"])
+        self.assertEqual(
+            result["conversation_status"],
+            "collecting_additional_details",
+        )
+
+    def test_invalid_email_is_rejected(self):
+        pending = main.conversation_states[self.session_id]["pending_ticket"]
+        pending["step"] = "customer_email"
+
+        result = self.send_message("invalid-email")
+
+        self.assertEqual(pending["step"], "customer_email")
+        self.assertTrue(result["awaiting_email"])
+        self.assertFalse(result["ticket_created"])
+
+    def test_valid_email_creates_ticket_with_details(self):
+        pending = main.conversation_states[self.session_id]["pending_ticket"]
+        pending["step"] = "customer_email"
+        pending["additional_details"] = (
+            "The error appears after entering the password."
+        )
+        pending["issue_summary"] = (
+            "Customer cannot log in because an error appears after password entry."
+        )
+
+        with patch("main._check_duplicate_ticket", return_value=None), \
+             patch("main.create_support_ticket", return_value="TKT-TEST123") as mock_create:
+
+            result = self.send_message("customer@example.com")
+
+        self.assertTrue(result["ticket_created"])
+        self.assertIn("TKT-TEST123", result["reply"])
+        self.assertNotIn(
+            "pending_ticket",
+            main.conversation_states[self.session_id],
+        )
+
+        mock_create.assert_called_once()
+        saved_data = mock_create.call_args.kwargs
+
+        self.assertEqual(
+            saved_data["customer_message"],
+            "My account login is failing.",
+        )
+        self.assertIn(
+            "The error appears after entering the password.",
+            saved_data["additional_details"],
+        )
+        self.assertIn(
+            "Confirmed issue summary:",
+            saved_data["additional_details"],
+        )
+        self.assertEqual(
+            saved_data["customer_email"],
+            "customer@example.com",
+        )
+
+    @patch("main.interpret_ticket_message")
+    def test_complete_ticket_conversation_end_to_end(self, mock_interpret):
+
+        mock_interpret.side_effect = [
+            {
+                "action": "ADD_DETAIL",
+                "confidence": 0.98,
+                "relevant_details": "The error appears after entering the password.",
+                "issue_summary": "The customer cannot log in because an error appears after entering the password.",
+                "needs_clarification": False,
+                "clarification_question": "",
+            },
+            {
+                "action": "ADD_DETAIL",
+                "confidence": 0.99,
+                "relevant_details": "The issue occurs only on the customer's mobile phone.",
+                "issue_summary": "The customer cannot log in because an error appears after entering the password, and the issue occurs only on mobile.",
+                "needs_clarification": False,
+                "clarification_question": "",
+            },
+            {
+                "action": "COMPLETE",
+                "confidence": 1.0,
+                "relevant_details": "",
+                "issue_summary": "The customer cannot log in because an error appears after entering the password, and the issue occurs only on mobile.",
+                "needs_clarification": False,
+                "clarification_question": "",
+            },
+        ]
+
+        with patch("main._check_duplicate_ticket", return_value=None), \
+             patch("main.create_support_ticket", return_value="TKT-E2E123") as mock_create:
+
+            self.send_message(
+                "The error appears after entering my password."
+            )
+            self.send_message("It happens only on my mobile phone.")
+
+            complete_result = self.send_message("That's all.")
+
+            self.assertTrue(
+                complete_result["awaiting_summary_confirmation"]
+            )
+
+            summary_result = self.send_message("YES")
+
+            self.assertTrue(summary_result["awaiting_email"])
+
+            ticket_result = self.send_message("customer@example.com")
+
+        self.assertTrue(ticket_result["ticket_created"])
+        self.assertEqual(ticket_result["ticket_id"], "TKT-E2E123")
+
+        mock_create.assert_called_once()
+
+        saved_data = mock_create.call_args.kwargs
+
+        self.assertIn(
+            "The error appears after entering the password.",
+            saved_data["additional_details"],
+        )
+
+        self.assertIn(
+            "The issue occurs only on the customer's mobile phone.",
+            saved_data["additional_details"],
+        )
+
+        self.assertIn(
+            "Confirmed issue summary:",
+            saved_data["additional_details"],
+        )
+
+        self.assertEqual(
+            saved_data["customer_email"],
+            "customer@example.com",
+        )
+
+        self.assertNotIn(
+            "pending_ticket",
+            main.conversation_states[self.session_id],
+        )
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)

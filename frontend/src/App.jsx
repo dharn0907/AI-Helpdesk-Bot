@@ -1,10 +1,14 @@
 
 import { useEffect, useRef, useState } from "react";
+import AdminDashboard from "./AdminDashboard.jsx";
 
 function App() {
+  const [activeView, setActiveView] = useState("chat");
   const [message, setMessage] = useState("");
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [emailAddress, setEmailAddress] = useState("");
+  const [emailError, setEmailError] = useState("");
 
   const [selectedFile, setSelectedFile] = useState(null);
   const [previewUrl, setPreviewUrl] = useState(null);
@@ -12,6 +16,7 @@ function App() {
 
   const fileInputRef = useRef(null);
   const sessionIdRef = useRef(crypto.randomUUID());
+  const requestInProgressRef = useRef(false);
 
   // Clean up image preview URL
   useEffect(() => {
@@ -22,18 +27,25 @@ function App() {
     };
   }, [previewUrl]);
 
-  // Send normal text messages to BERT
-  const sendMessage = async () => {
-    if (!message.trim() || loading || uploading) return;
+  // Send text messages and interactive confirmation choices.
+  const sendChatMessage = async (
+    requestText,
+    displayText = requestText
+  ) => {
+    if (
+      !requestText.trim() ||
+      loading ||
+      uploading ||
+      requestInProgressRef.current
+    ) return;
 
-    const userMessage = message.trim();
+    requestInProgressRef.current = true;
 
     setMessages((prev) => [
       ...prev,
-      { sender: "user", text: userMessage }
+      { sender: "user", text: displayText }
     ]);
 
-    setMessage("");
     setLoading(true);
 
     try {
@@ -45,9 +57,9 @@ function App() {
             "Content-Type": "application/json"
           },
           body: JSON.stringify({
-  message: userMessage,
-  session_id: sessionIdRef.current
-})
+            message: requestText,
+            session_id: sessionIdRef.current
+          })
         }
       );
 
@@ -64,8 +76,11 @@ function App() {
         {
           sender: "bot",
           text: data.reply || "No reply received.",
-          intent: data.intent,
-          confidence: data.confidence
+          actions: data.awaiting_summary_confirmation
+            ? "summary_confirmation"
+            : data.awaiting_email
+              ? "email_collection"
+              : null
         }
       ]);
 
@@ -78,8 +93,54 @@ function App() {
         }
       ]);
     } finally {
+      requestInProgressRef.current = false;
       setLoading(false);
     }
+  };
+
+  // Send a normal customer message.
+  const sendMessage = async () => {
+    if (!message.trim() || loading || uploading) return;
+
+    const userMessage = message.trim();
+    setMessage("");
+
+    await sendChatMessage(userMessage, userMessage);
+  };
+
+  // Handle summary confirmation buttons.
+  const handleSummaryChoice = async (confirmed) => {
+    if (loading || uploading || requestInProgressRef.current) return;
+
+    if (confirmed) {
+      await sendChatMessage("yes", "Yes, that's correct");
+    } else {
+      await sendChatMessage("no", "No, make changes");
+    }
+  };
+
+  // Validate and submit the customer's email address.
+  const handleEmailSubmit = async (event) => {
+    event.preventDefault();
+
+    if (loading || uploading || requestInProgressRef.current) return;
+
+    const email = emailAddress.trim();
+    const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+    if (!email) {
+      setEmailError("Please enter your email address.");
+      return;
+    }
+
+    if (!emailPattern.test(email)) {
+      setEmailError("Please enter a valid email address, such as name@example.com.");
+      return;
+    }
+
+    setEmailError("");
+    await sendChatMessage(email, email);
+    setEmailAddress("");
   };
 
   // Select an image
@@ -104,7 +165,7 @@ function App() {
     setPreviewUrl(URL.createObjectURL(file));
   };
 
-  // Upload image, extract text using OCR, and classify using BERT
+  // Upload image, extract text using OCR, and process the complaint
   const uploadImage = async () => {
     if (!selectedFile || uploading || loading) return;
 
@@ -154,7 +215,7 @@ function App() {
         }
       ]);
 
-      // STEP 3: Send OCR text to BERT
+      // STEP 3: Send OCR text to chatbot backend
       if (extractedText.trim()) {
         const chatResponse = await fetch(
           "http://127.0.0.1:8000/chat",
@@ -164,9 +225,9 @@ function App() {
               "Content-Type": "application/json"
             },
             body: JSON.stringify({
-  message: extractedText,
-  session_id: sessionIdRef.current
-})
+              message: extractedText,
+              session_id: sessionIdRef.current
+            })
           }
         );
 
@@ -174,18 +235,16 @@ function App() {
 
         if (!chatResponse.ok) {
           throw new Error(
-            chatData.detail || "Complaint classification failed."
+            chatData.detail || "Complaint processing failed."
           );
         }
 
-        // STEP 4: Display BERT classification
+        // STEP 4: Display the chatbot response
         setMessages((prev) => [
           ...prev,
           {
             sender: "bot",
-            text: chatData.reply || "Complaint analyzed successfully.",
-            intent: chatData.intent,
-            confidence: chatData.confidence
+            text: chatData.reply || "Complaint analyzed successfully."
           }
         ]);
       }
@@ -209,6 +268,10 @@ function App() {
     }
   };
 
+  if (activeView === "admin") {
+    return <AdminDashboard onBack={() => setActiveView("chat")} />;
+  }
+
   return (
     <div style={styles.container}>
       <div style={styles.chatWindow}>
@@ -219,6 +282,11 @@ function App() {
             <h2>AI Helpdesk Bot</h2>
             <p>Your personal customer support assistant</p>
           </div>
+
+          <button
+            onClick={() => setActiveView("admin")}
+            style={{ padding: "8px 12px", border: 0, borderRadius: 7, cursor: "pointer" }}
+          >Admin Dashboard</button>
 
           <span style={styles.status}>● Online</span>
         </header>
@@ -251,28 +319,174 @@ function App() {
                 {msg.text}
               </div>
 
-              {/* Display BERT prediction */}
-              {msg.sender === "bot" && msg.intent && (
-                <div style={styles.prediction}>
-                  <div>
-                    <strong>Detected category:</strong> {msg.intent}
-                  </div>
+              {msg.sender === "bot" &&
+                msg.actions === "summary_confirmation" && (
+                  <div
+                    style={{
+                      display: "flex",
+                      flexWrap: "wrap",
+                      gap: "10px",
+                      marginTop: "14px"
+                    }}
+                  >
+                    <button
+                      type="button"
+                      disabled={loading || uploading}
+                      onClick={() => handleSummaryChoice(true)}
+                      style={{
+                        background: "#15803d",
+                        color: "white",
+                        border: "none",
+                        borderRadius: "8px",
+                        padding: "10px 16px",
+                        cursor: loading ? "not-allowed" : "pointer",
+                        opacity: loading ? 0.6 : 1
+                      }}
+                    >
+                      Yes, that's correct
+                    </button>
 
-                  {typeof msg.confidence === "number" && (
-                    <div>
-                      <strong>Confidence:</strong>{" "}
-                      {(msg.confidence * 100).toFixed(2)}%
+                    <button
+                      type="button"
+                      disabled={loading || uploading}
+                      onClick={() => handleSummaryChoice(false)}
+                      style={{
+                        background: "white",
+                        color: "#374151",
+                        border: "1px solid #9ca3af",
+                        borderRadius: "8px",
+                        padding: "10px 16px",
+                        cursor: loading ? "not-allowed" : "pointer",
+                        opacity: loading ? 0.6 : 1
+                      }}
+                    >
+                      No, make changes
+                    </button>
+                  </div>
+                )}
+
+              {msg.sender === "bot" &&
+                msg.actions === "email_collection" && (
+                  <form
+                    onSubmit={handleEmailSubmit}
+                    style={{
+                      marginTop: "16px",
+                      padding: "16px",
+                      background: "white",
+                      border: "1px solid #dbe3ef",
+                      borderRadius: "12px",
+                      width: "min(100%, 340px)",
+                      boxSizing: "border-box"
+                    }}
+                  >
+                    <div style={{ marginBottom: "12px" }}>
+                      <div style={{
+                        fontSize: "15px",
+                        fontWeight: "700",
+                        color: "#111827",
+                        marginBottom: "5px"
+                      }}>
+                        <span role="img" aria-label="email">??</span>
+                        {" "}Where should we send your updates?
+                      </div>
+
+                      <div style={{
+                        fontSize: "13px",
+                        color: "#6b7280",
+                        lineHeight: "1.5"
+                      }}>
+                        Enter your email address so our support team
+                        can contact you about this ticket.
+                      </div>
                     </div>
-                  )}
-                </div>
-              )}
+
+                    <label
+                      htmlFor={`customer-email-${index}`}
+                      style={{
+                        display: "block",
+                        fontSize: "13px",
+                        fontWeight: "600",
+                        color: "#374151",
+                        marginBottom: "6px"
+                      }}
+                    >
+                      Email address
+                    </label>
+
+                    <input
+                      id={`customer-email-${index}`}
+                      type="email"
+                      autoComplete="email"
+                      required
+                      value={emailAddress}
+                      onChange={(event) => {
+                        setEmailAddress(event.target.value);
+                        setEmailError("");
+                      }}
+                      placeholder="name@example.com"
+                      disabled={loading || uploading}
+                      style={{
+                        width: "100%",
+                        boxSizing: "border-box",
+                        padding: "12px",
+                        border: emailError
+                          ? "1px solid #dc2626"
+                          : "1px solid #cbd5e1",
+                        borderRadius: "8px",
+                        fontSize: "14px",
+                        outline: "none",
+                        marginBottom: "8px"
+                      }}
+                    />
+
+                    {emailError && (
+                      <div
+                        role="alert"
+                        style={{
+                          color: "#dc2626",
+                          fontSize: "12px",
+                          marginBottom: "10px"
+                        }}
+                      >
+                        {emailError}
+                      </div>
+                    )}
+
+                    <button
+                      type="submit"
+                      disabled={loading || uploading}
+                      style={{
+                        width: "100%",
+                        padding: "11px",
+                        background: loading ? "#93c5fd" : "#2563eb",
+                        color: "white",
+                        border: "none",
+                        borderRadius: "8px",
+                        fontSize: "14px",
+                        fontWeight: "600",
+                        cursor: loading ? "not-allowed" : "pointer"
+                      }}
+                    >
+                      {loading ? "Submitting..." : "Submit email"}
+                    </button>
+
+                    <div style={{
+                      fontSize: "11px",
+                      color: "#6b7280",
+                      marginTop: "9px",
+                      textAlign: "center"
+                    }}>
+                      Your email will be used for support ticket updates.
+                    </div>
+                  </form>
+                )}
             </div>
           ))}
 
           {loading && <p>Bot is typing...</p>}
 
           {uploading && (
-            <p>Analyzing your image with OCR and BERT...</p>
+            <p>Analyzing your image...</p>
           )}
 
         </div>
@@ -341,8 +555,8 @@ function App() {
             onKeyDown={(e) => {
               if (e.key === "Enter") sendMessage();
             }}
-            placeholder="Type your complaint..."
-            disabled={uploading}
+            placeholder="Type your message..."
+            disabled={uploading || loading}
           />
 
           <button
@@ -369,16 +583,6 @@ const styles = {
     alignItems: "center",
     padding: "20px",
     fontFamily: "Arial, sans-serif"
-  },
-
-  prediction: {
-    marginTop: "10px",
-    padding: "8px",
-    background: "#dbeafe",
-    color: "#1e40af",
-    borderRadius: "6px",
-    fontSize: "12px",
-    lineHeight: "1.6"
   },
 
   chatWindow: {

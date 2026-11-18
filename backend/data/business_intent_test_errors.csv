@@ -1,0 +1,24 @@
+﻿text,intent,predicted_intent
+Can I purchase gift cards on your website right now?,AVAILABILITY_ENQUIRY,PURCHASE_ENQUIRY
+I want details about your premium package.,PRODUCT_SERVICE_ENQUIRY,OTHER_BUSINESS_ENQUIRY
+Tell me more about your products.,PRODUCT_SERVICE_ENQUIRY,OTHER_BUSINESS_ENQUIRY
+Can I schedule a walkthrough of your platform?,DEMO_ENQUIRY,BOOKING_ENQUIRY
+Can I request a guided tour of your main manufacturing plant?,OTHER_BUSINESS_ENQUIRY,DEMO_ENQUIRY
+What payment methods do you accept at your checkout counter?,OTHER_BUSINESS_ENQUIRY,PRODUCT_SERVICE_ENQUIRY
+Can I upgrade my seating to business class after booking?,BOOKING_ENQUIRY,OTHER_BUSINESS_ENQUIRY
+Can I schedule a walkthrough of the platform?,DEMO_ENQUIRY,BOOKING_ENQUIRY
+Can I get a breakdown of your current executive board members?,OTHER_BUSINESS_ENQUIRY,QUOTATION_ENQUIRY
+Can I download my past billing statements as a PDF?,FEATURE_ENQUIRY,PRODUCT_SERVICE_ENQUIRY
+Can we set up a meeting to review the architectural blueprints?,BOOKING_ENQUIRY,DEMO_ENQUIRY
+What services does your company provide?,PRODUCT_SERVICE_ENQUIRY,OTHER_BUSINESS_ENQUIRY
+I need information about your software.,PRODUCT_SERVICE_ENQUIRY,OTHER_BUSINESS_ENQUIRY
+What do your enterprise packages go for?,PRICING_ENQUIRY,PRODUCT_SERVICE_ENQUIRY
+Do you accept walk-ins for routine physical exams at your urgent care clinic?,AVAILABILITY_ENQUIRY,PRODUCT_SERVICE_ENQUIRY
+I would like to know if your weekend web development bootcamp requires prior coding experience.,PRODUCT_SERVICE_ENQUIRY,OTHER_BUSINESS_ENQUIRY
+Is your software compliant with standard European data regulations?,FEATURE_ENQUIRY,PRODUCT_SERVICE_ENQUIRY
+Can you explain your consulting services?,PRODUCT_SERVICE_ENQUIRY,OTHER_BUSINESS_ENQUIRY
+What is the price for a customized mobile app development?,QUOTATION_ENQUIRY,PRICING_ENQUIRY
+Are you currently accepting new vendor applications for your travel portal?,PARTNERSHIP_ENQUIRY,AVAILABILITY_ENQUIRY
+Are these running shoes true to size or should I order a half size up?,PRODUCT_SERVICE_ENQUIRY,AVAILABILITY_ENQUIRY
+Can I track my package in real time after ordering?,PRODUCT_SERVICE_ENQUIRY,FEATURE_ENQUIRY
+Are meals included in the standard room rate?,FEATURE_ENQUIRY,PRODUCT_SERVICE_ENQUIRY
