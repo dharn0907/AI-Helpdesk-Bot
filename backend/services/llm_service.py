@@ -659,3 +659,4 @@ decision must be exactly IN_DOMAIN, OUT_OF_DOMAIN, or UNCERTAIN.
     except Exception as exc:
         print(f"Company-domain validation failed: {exc}")
         return {"decision": "UNCERTAIN", "reason": "Validation failed"}
+print("LLM service loaded successfully.")

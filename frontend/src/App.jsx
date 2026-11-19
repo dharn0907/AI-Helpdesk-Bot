@@ -1,4 +1,4 @@
-
+﻿
 import { useEffect, useRef, useState } from "react";
 import AdminDashboard from "./AdminDashboard.jsx";
 
@@ -16,6 +16,16 @@ function App() {
 
   const fileInputRef = useRef(null);
   const sessionIdRef = useRef(crypto.randomUUID());
+  const customerIdRef = useRef(
+    localStorage.getItem("helpdesk_customer_id") || crypto.randomUUID()
+  );
+
+  useEffect(() => {
+    localStorage.setItem(
+      "helpdesk_customer_id",
+      customerIdRef.current
+    );
+  }, []);
   const requestInProgressRef = useRef(false);
 
   // Clean up image preview URL
@@ -58,7 +68,8 @@ function App() {
           },
           body: JSON.stringify({
             message: requestText,
-            session_id: sessionIdRef.current
+            session_id: sessionIdRef.current,
+            customer_id: customerIdRef.current
           })
         }
       );
@@ -226,7 +237,8 @@ function App() {
             },
             body: JSON.stringify({
               message: extractedText,
-              session_id: sessionIdRef.current
+              session_id: sessionIdRef.current,
+            customer_id: customerIdRef.current
             })
           }
         );
@@ -288,7 +300,7 @@ function App() {
             style={{ padding: "8px 12px", border: 0, borderRadius: 7, cursor: "pointer" }}
           >Admin Dashboard</button>
 
-          <span style={styles.status}>● Online</span>
+          <span style={styles.status}>â— Online</span>
         </header>
 
         {/* Chat messages */}
@@ -296,7 +308,7 @@ function App() {
 
           {messages.length === 0 && (
             <div style={styles.welcome}>
-              <h2>Hello! 👋</h2>
+              <h2>Hello! ðŸ‘‹</h2>
               <p>How can I help you today?</p>
               <p>You can also upload a screenshot of your complaint.</p>
             </div>
@@ -545,7 +557,7 @@ function App() {
             disabled={uploading || loading}
             title="Attach complaint image"
           >
-            📎
+            ðŸ“Ž
           </button>
 
           <input
@@ -708,3 +720,4 @@ const styles = {
 };
 
 export default App;
+

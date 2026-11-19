@@ -1,10 +1,10 @@
-﻿"""Application entry point for the AI Helpdesk backend."""
+"""Application entry point for the AI Helpdesk backend."""
 
 import re
 import time
 import uuid
-
 from fastapi import FastAPI, HTTPException
+from services.zep_memory_service import save_assistant_turn, start_user_turn
 from services.first_level_intent_service import classify_first_level_intent
 from services.business_intent_service import classify_business_intent
 from fastapi.middleware.cors import CORSMiddleware
@@ -505,7 +505,8 @@ def valid_email(email):
 
 
 def save_history(history, user_message, reply):
-    """Append a user/assistant exchange and retain the latest 20 messages."""
+    """Append the exchange, excluding temporary Zep context, and retain 20 messages."""
+    history = [item for item in history if not item.get("zep_memory")]
     history.append({"role": "user", "content": user_message})
     history.append({"role": "assistant", "content": reply})
     return history[-20:]
@@ -578,7 +579,18 @@ def wants_human_support(message):
 
 def _save_and_return(state, history, user_message, reply, **payload):
     """Save the exchange and return a consistent chatbot response."""
+
     state["history"] = save_history(history, user_message, reply)
+
+    # Save the assistant response to Zep (best-effort)
+    thread_uuid = state.get("zep_thread_uuid")
+
+    if thread_uuid:
+        try:
+            save_assistant_turn(thread_uuid, reply)
+        except Exception as exc:
+            print(f"ZEP: Assistant message save failed: {exc}")
+
     return {"reply": reply, **payload}
 
 
@@ -780,6 +792,37 @@ def chat(data: dict):
     user_message = user_message.strip()
     state = conversation_states.setdefault(session_id, {})
     history = state.setdefault("history", [])
+
+    # ZEP MEMORY
+    customer_id = data.get("customer_id")
+    zep_memory_context = ""
+
+    if customer_id:
+        try:
+            thread_uuid, zep_memory_context = start_user_turn(
+                company_id="active_company",
+                customer_id=customer_id,
+                session_id=session_id,
+                user_message=user_message,
+            )
+
+            if thread_uuid:
+                state["zep_thread_uuid"] = thread_uuid
+
+        except Exception as exc:
+            print(f"ZEP: Memory integration failed: {exc}")
+
+    if zep_memory_context:
+        history.append({
+            "role": "system",
+            "content": (
+                "Relevant long-term memory about this customer "
+                "from previous conversations:\n"
+                + zep_memory_context
+            ),
+            "zep_memory": True,
+        })
+
 
     # Handle clear cancellation requests from any active ticket state.
     if state.get("pending_ticket") and is_ticket_cancellation(user_message):
@@ -2464,6 +2507,14 @@ def chat(data: dict):
         user_message,
         support_reply
     )
+
+    # Save the assistant response to Zep for this conversation (best-effort).
+    thread_uuid = state.get("zep_thread_uuid")
+    if thread_uuid:
+        try:
+            save_assistant_turn(thread_uuid, support_reply)
+        except Exception as exc:
+            print(f"ZEP: Assistant message save failed: {exc}")
 
     print("INTENT:", intent)
     print("INTERVENTION:", intervention)
