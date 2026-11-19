@@ -1,7 +1,7 @@
 ﻿import hashlib
 import os
 from pathlib import Path
-
+import uuid
 from dotenv import load_dotenv
 from zep_cloud.client import Zep
 from zep_cloud import AddMessage
@@ -84,7 +84,7 @@ def get_or_create_thread(company_id, customer_id, session_id):
             # Create the user if lookup fails.
             user = client.user.create(
                 user_id=zep_user_id,
-                idempotency_key=zep_user_id,
+                idempotency_key=str(uuid.uuid4()),
             )
 
         user_uuid = _get_uuid(user)
@@ -96,7 +96,7 @@ def get_or_create_thread(company_id, customer_id, session_id):
         # Create a thread for this chat session.
         thread = client.thread.create(
             user_uuid=user_uuid,
-            idempotency_key=cache_key,
+            idempotency_key=str(uuid.uuid4()),
         )
 
         thread_uuid = _get_uuid(thread)
