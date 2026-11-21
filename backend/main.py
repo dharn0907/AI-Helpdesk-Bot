@@ -1,8 +1,11 @@
-"""Application entry point for the AI Helpdesk backend."""
+﻿"""Application entry point for the AI Helpdesk backend."""
 
 import re
 import time
+
 import uuid
+import asyncio
+from datetime import datetime, timezone
 from fastapi import FastAPI, HTTPException
 from services.zep_memory_service import save_assistant_turn, start_user_turn
 from services.first_level_intent_service import classify_first_level_intent
@@ -11,6 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from routes.knowledge_base_routes import router as knowledge_base_router
 from routes.image import router as image_router
 from routes.ticket_routes import router as ticket_router
+from services.conversation_logging_service import save_conversation_exchange
 from routes.company_routes import router as company_router
 from services.ticket_retrieval_service import (
     retrieve_solution,
@@ -31,10 +35,19 @@ from services.llm_service import (
 from services.ticket_conversation_service import (
     interpret_ticket_message,
 )
-
+from routes.conversation_routes import router as conversation_router
+from routes.historical_solution_routes import router as historical_solution_router
+from routes.historical_attempt_routes import router as historical_attempt_router
 from database.database import SessionLocal
-from database.models import Ticket, Company, BotConfiguration
-
+from database.models import (
+    Ticket,
+    Company,
+    BotConfiguration,
+    Conversation,
+    ConversationMessage,
+    HistoricalSolutionFeedback,
+    HistoricalSolutionAttempt,
+)
 
 def _get_active_company_config():
     """Load the active company's saved bot instructions for domain validation."""
@@ -394,9 +407,76 @@ def generate_llm_response(
         
     )
 app = FastAPI(title="AI Helpdesk Bot")
+async def historical_solution_timeout_checker():
+    print("Historical solution timeout checker started.")
+
+    while True:
+        db = SessionLocal()
+
+        try:
+            pending_attempts = (
+                db.query(HistoricalSolutionAttempt, Company)
+                .join(
+                    Company,
+                    HistoricalSolutionAttempt.company_id == Company.id,
+                )
+                .filter(
+                    HistoricalSolutionAttempt.attempt_status == "pending",
+                    Company.historical_solution_timeout_enabled.is_(True),
+                )
+                .all()
+            )
+
+            now = datetime.now(timezone.utc)
+
+            for attempt, company in pending_attempts:
+                created_at = attempt.created_at
+
+                if created_at is None:
+                    continue
+
+                if created_at.tzinfo is None:
+                    created_at = created_at.replace(
+                        tzinfo=timezone.utc
+                    )
+
+                elapsed_hours = (
+                    now - created_at
+                ).total_seconds() / 3600
+
+                timeout_hours = (
+                    company.historical_solution_timeout_hours
+                )
+
+                if elapsed_hours >= timeout_hours:
+                    attempt.attempt_status = "abandoned"
+
+                    print(
+                        f"Attempt {attempt.id} marked abandoned "
+                        f"after {elapsed_hours:.2f} hours."
+                    )
+
+            db.commit()
+
+        except Exception as e:
+            db.rollback()
+            print(
+                f"Historical timeout checker error: {e}"
+            )
+
+        finally:
+            db.close()
+
+        await asyncio.sleep(60)
+
+
 @app.on_event("startup")
-def initialize_knowledge_base_tables():
+async def initialize_knowledge_base_tables():
     Base.metadata.create_all(bind=engine)
+
+    asyncio.create_task(
+        historical_solution_timeout_checker()
+    )
 
 # Conversation state is currently stored in memory. For production, move this
 # to a persistent store such as Redis or the database.
@@ -511,6 +591,27 @@ def save_history(history, user_message, reply):
     history.append({"role": "assistant", "content": reply})
     return history[-20:]
 
+def get_ticket_category(intent):
+    intent = (intent or "").lower().strip()
+
+    category_mapping = {
+        "login_issue": "Login / Authentication",
+        "authentication": "Login / Authentication",
+        "delivery_tracking": "Delivery / Shipping",
+        "delivery_issue": "Delivery / Shipping",
+        "duplicate_payment": "Payment / Billing",
+        "payment_issue": "Payment / Billing",
+        "refund_request": "Refunds / Returns",
+        "return_request": "Refunds / Returns",
+        "technical_issue": "Technical Issues",
+        "bug_report": "Technical Issues",
+        "account_issue": "Account Management",
+        "account_management": "Account Management",
+        "product_question": "Product / Service Questions",
+        "feature_request": "Feature Requests",
+    }
+
+    return category_mapping.get(intent, "Other")
 
 def create_support_ticket(
     customer_message,
@@ -518,17 +619,21 @@ def create_support_ticket(
     customer_email,
     intent,
     session_id,
+    company_id=None,
 ):
+    
     """Create a ticket in the configured database."""
     db = SessionLocal()
     try:
         ticket = Ticket(
+            company_id=company_id,
             ticket_id=f"TKT-{uuid.uuid4().hex[:8].upper()}",
             session_id=session_id,
             customer_message=customer_message,
             additional_details=additional_details,
             customer_email=customer_email,
             intent=intent,
+            category=get_ticket_category(intent),
             priority="Medium",
             status="Open",
         )
@@ -592,6 +697,209 @@ def _save_and_return(state, history, user_message, reply, **payload):
             print(f"ZEP: Assistant message save failed: {exc}")
 
     return {"reply": reply, **payload}
+
+def _save_and_return(state, history, user_message, reply, **payload):
+    """Save the exchange and return a consistent chatbot response."""
+
+    state["history"] = save_history(history, user_message, reply)
+
+    # Save conversation to database
+    try:
+        save_conversation_exchange(
+            session_id=state.get("session_id"),
+            company_id=state.get("company_id"),
+            customer_id=state.get("customer_id"),
+            customer_email=state.get("customer_email"),
+            user_message=user_message,
+            bot_reply=reply,
+        )
+    except Exception as exc:
+        print(f"CONVERSATION LOG ERROR: {exc}")
+
+    # Save assistant response to Zep best-effort
+    thread_uuid = state.get("zep_thread_uuid")
+    if thread_uuid:
+        try:
+            save_assistant_turn(thread_uuid, reply)
+        except Exception as exc:
+            print(f"ZEP: Assistant message save failed: {exc}")
+
+    return {"reply": reply, **payload}
+
+def _save_historical_solution_feedback(
+    state,
+    resolution_feedback,
+    feedback,
+):
+    """Store customer feedback about a reused historical solution."""
+
+    matched_ticket = resolution_feedback.get("matched_ticket", {})
+
+    db = SessionLocal()
+
+    try:
+        record = HistoricalSolutionFeedback(
+            company_id=matched_ticket.get("company_id"),
+            matched_ticket_id=matched_ticket.get("ticket_id"),
+            customer_complaint=resolution_feedback.get("complaint", ""),
+            reused_solution=matched_ticket.get("solution", ""),
+            feedback=feedback,
+            similarity_score=matched_ticket.get("similarity"),
+            session_id=state.get("session_id"),
+        )
+
+        db.add(record)
+        db.commit()
+
+        print(f"HISTORICAL SOLUTION FEEDBACK SAVED: {feedback}")
+
+    except Exception as exc:
+        db.rollback()
+        print(f"HISTORICAL FEEDBACK SAVE ERROR: {exc}")
+
+    finally:
+        db.close()
+def _create_historical_solution_attempt(
+    state,
+    complaint,
+    matched_ticket,
+    response_delivered,
+):
+    """Create a database record for a historical solution attempt."""
+
+    db = SessionLocal()
+
+    try:
+        company_id = (
+            matched_ticket.get("company_id")
+            or state.get("company_id")
+        )
+
+        if not company_id:
+            print("HISTORICAL ATTEMPT ERROR: Company ID missing.")
+            return None
+
+        record = HistoricalSolutionAttempt(
+            company_id=company_id,
+            session_id=state.get("session_id"),
+            customer_email=state.get("customer_email"),
+            customer_complaint=complaint,
+            matched_ticket_id=matched_ticket.get("ticket_id"),
+            retrieved_solution=matched_ticket.get("solution"),
+            similarity_score=matched_ticket.get("similarity"),
+            response_delivered=response_delivered,
+            resolution_confirmation="pending",
+            attempt_status="pending",
+        )
+
+        db.add(record)
+        db.commit()
+        db.refresh(record)
+
+        print(
+            "HISTORICAL ATTEMPT CREATED:",
+            record.id,
+        )
+
+        return record.id
+
+    except Exception as exc:
+        db.rollback()
+        print(f"HISTORICAL ATTEMPT SAVE ERROR: {exc}")
+        return None
+
+    finally:
+        db.close()
+
+
+def _update_historical_solution_attempt(
+    attempt_id,
+    resolution_confirmation=None,
+    attempt_status=None,
+    created_ticket_id=None,
+):
+    """Update an existing historical solution attempt."""
+
+    if not attempt_id:
+        return
+
+    db = SessionLocal()
+
+    try:
+        record = (
+            db.query(HistoricalSolutionAttempt)
+            .filter(
+                HistoricalSolutionAttempt.id == attempt_id
+            )
+            .first()
+        )
+
+        if not record:
+            print(
+                "HISTORICAL ATTEMPT UPDATE: "
+                f"Record {attempt_id} not found."
+            )
+            return
+
+        if resolution_confirmation is not None:
+            record.resolution_confirmation = resolution_confirmation
+
+        if attempt_status is not None:
+            record.attempt_status = attempt_status
+
+        if created_ticket_id is not None:
+            record.created_ticket_id = created_ticket_id
+
+        db.commit()
+
+        print(
+            f"HISTORICAL ATTEMPT UPDATED: {attempt_id}"
+        )
+
+    except Exception as exc:
+        db.rollback()
+        print(f"HISTORICAL ATTEMPT UPDATE ERROR: {exc}")
+
+    finally:
+        db.close()
+
+def _is_usable_approved_solution(match):
+    """Reject empty, generic, or callback/handoff-only historical responses."""
+    solution = str((match or {}).get("solution") or "").strip()
+    if len(solution) < 30:
+        return False
+
+    normalized = re.sub(r"\s+", " ", solution.lower()).strip()
+    non_actionable_phrases = (
+        "please wait",
+        "wait for some time",
+        "wait for a while",
+        "i will call you",
+        "we will call you",
+        "will call you",
+        "call you back",
+        "calling you back",
+        "i'll call you",
+        "we'll call you",
+        "i will contact you",
+        "we will contact you",
+        "will contact you",
+        "contact you soon",
+        "our team will contact",
+        "support team will contact",
+        "agent will contact",
+        "someone will contact",
+        "connect you to an agent",
+        "connect you with an agent",
+        "transfer you to support",
+        "escalate this issue",
+        "raise a ticket",
+        "create a ticket",
+        "i understand the issue",
+        "i understand your issue",
+        "sorry for the inconvenience",
+    )
+    return not any(phrase in normalized for phrase in non_actionable_phrases)
 
 
 def _classify_issue(issue_text):
@@ -727,14 +1035,12 @@ def _finish_ticket_creation(state, history, user_message, session_id, pending_ti
 
     try:
         ticket_id = create_support_ticket(
-            customer_message=(
-                (pending_ticket.get("issue_summary") or "").strip()
-                or pending_ticket["original_complaint"]
-            ),
+            customer_message=pending_ticket["original_complaint"],
             additional_details=_ticket_additional_details_for_storage(pending_ticket),
             customer_email=email,
             intent=pending_ticket["intent"],
             session_id=session_id,
+            company_id=state.get("company_id"),
         )
     except Exception as exc:
         print(f"Ticket creation failed: {exc}")
@@ -742,6 +1048,14 @@ def _finish_ticket_creation(state, history, user_message, session_id, pending_ti
             status_code=500,
             detail="Unable to create your ticket. Please try again.",
         )
+
+    # Link the failed historical solution attempt to the new ticket.
+    _update_historical_solution_attempt(
+        attempt_id=pending_ticket.get("historical_attempt_id"),
+        resolution_confirmation="no",
+        attempt_status="ticket_created",
+        created_ticket_id=ticket_id,
+    )
 
     intervention = pending_ticket["intervention"]
     intervention_confidence = pending_ticket["intervention_confidence"]
@@ -792,9 +1106,24 @@ def chat(data: dict):
     user_message = user_message.strip()
     state = conversation_states.setdefault(session_id, {})
     history = state.setdefault("history", [])
+    # Store conversation metadata
+    state["session_id"] = session_id
 
+    if not state.get("company_id"):
+        db = SessionLocal()
+        try:
+            active_company = (
+                db.query(Company)
+                .filter(Company.is_active.is_(True))
+                .first()
+            )
+            if active_company:
+                state["company_id"] = active_company.id
+        finally:
+            db.close()
     # ZEP MEMORY
     customer_id = data.get("customer_id")
+    state["customer_id"] = customer_id
     zep_memory_context = ""
 
     if customer_id:
@@ -914,6 +1243,20 @@ def chat(data: dict):
 
         if choice in {"yes", "y", "yes it did", "resolved", "it worked"}:
 
+            _save_historical_solution_feedback(
+                state,
+                resolution_feedback,
+                "resolved"
+            )
+
+            # Update the historical retrieval attempt.
+            _update_historical_solution_attempt(
+                attempt_id=resolution_feedback.get(
+                    "historical_attempt_id"
+                ),
+                resolution_confirmation="yes",
+                attempt_status="resolved",
+            )
             state.pop("awaiting_resolution_feedback", None)
 
             # Clear the completed issue context.
@@ -946,6 +1289,21 @@ def chat(data: dict):
 
         if choice in {"no", "n", "not resolved", "did not work", "didn't work"}:
 
+            _save_historical_solution_feedback(
+                state,
+                resolution_feedback,
+                "not_resolved"
+            )
+
+            # Mark the historical solution attempt as failed.
+            _update_historical_solution_attempt(
+                attempt_id=resolution_feedback.get(
+                    "historical_attempt_id"
+                ),
+                resolution_confirmation="no",
+                attempt_status="failed",
+            )
+
             state.pop("awaiting_resolution_feedback", None)
 
             complaint = resolution_feedback["complaint"]
@@ -955,21 +1313,35 @@ def chat(data: dict):
                 "intervention_confidence"
             ]
 
+            # Preserve the complete confirmed issue.
+            state["pending_ticket"] = {
+                "original_complaint": complaint,
+                "additional_details": "",
+                "detail_messages": [],
+                "issue_summary": complaint,
+                "intent": intent,
+                "intervention": intervention,
+                "intervention_confidence": intervention_confidence,
+                "historical_attempt_id": resolution_feedback.get("historical_attempt_id"),
+                "step": "customer_email",
+                "asked_questions": [],
+            }
+
             reply = (
-                "I'm sorry that solution didn't resolve your issue. "
-                "I'll help you raise a support request so our team "
-                "can investigate it further."
+                "I'm sorry that didn't work. I'll arrange further "
+                "assistance from our support team.\n\n"
+                "Please provide your email address so we can send "
+                "you updates about your support request."
             )
 
-            return _start_ticket_collection(
+            return _save_and_return(
                 state,
                 history,
                 user_message,
-                complaint,
-                intent,
-                intervention,
-                intervention_confidence,
                 reply,
+                ticket_created=False,
+                awaiting_email=True,
+                conversation_status="collecting_customer_email",
             )
 
         # --------------------------------------------
@@ -1059,6 +1431,7 @@ def chat(data: dict):
                     customer_message=user_message,
                     pending_ticket=pending_ticket,
                     conversation_history=history[-10:],
+                    company_config=_get_active_company_config(),
                 )
             except Exception as exc:
                 print(f"Ticket message interpretation failed: {exc}")
@@ -1254,9 +1627,9 @@ def chat(data: dict):
                             asked_questions.append(next_question)
                         else:
                             reply = (
-                                "Thanks for that update. I've updated the issue details. "
-                                "If you remember the error message, you can still share it. "
-                                "What happened after you attempted the payment?"
+                                "Thanks, I've recorded that detail. "
+                                "If you have anything else to add, please share it. "
+                                "Otherwise, say 'I'm done' and I'll prepare the issue summary."
                             )
 
                     elif pending_ticket["information_complete"]:
@@ -1625,6 +1998,70 @@ def chat(data: dict):
             }
 
             if choice in positive_choices:
+
+                # Use the complete, customer-confirmed issue summary
+                complaint = (
+                    pending_ticket.get("issue_summary")
+                    or pending_ticket.get("original_complaint")
+                    or ""
+                ).strip()
+
+                intent = pending_ticket.get("intent")
+                intervention = pending_ticket.get("intervention")
+                intervention_confidence = pending_ticket.get(
+                    "intervention_confidence"
+                )
+
+                # Search approved resolutions only after the customer
+                # confirms the complete issue summary.
+                try:
+                    approved_match = retrieve_approved_solution(
+                        user_message=complaint,
+                        intent=intent,
+                    )
+                except Exception as exc:
+                    print(f"Approved resolution retrieval failed: {exc}")
+                    approved_match = None
+
+                # If a suitable solution exists, offer it naturally
+                if approved_match:
+
+                    reply = (
+                        "Thanks for clarifying. You can try this:\n\n"
+                        f"{approved_match['solution']}\n\n"
+                        "Did this resolve the issue? Reply YES or NO."
+                    )
+
+                    # Create a permanent record of this retrieval attempt.
+                    attempt_id = _create_historical_solution_attempt(
+                        state=state,
+                        complaint=complaint,
+                        matched_ticket=approved_match,
+                        response_delivered=reply,
+                    )
+
+                    state["awaiting_resolution_feedback"] = {
+                        "complaint": complaint,
+                        "intent": intent,
+                        "intervention": intervention,
+                        "intervention_confidence": intervention_confidence,
+                        "matched_ticket": approved_match,
+                        "historical_attempt_id": attempt_id,
+                    }
+
+                    state.pop("pending_ticket", None)
+
+                    return _save_and_return(
+                        state,
+                        history,
+                        user_message,
+                        reply,
+                        ticket_created=False,
+                        awaiting_resolution_feedback=True,
+                        conversation_status="awaiting_resolution_feedback",
+                    )               
+
+                # No suitable solution found — continue normal ticket process
                 pending_ticket["step"] = "customer_email"
 
                 reply = (
@@ -2198,6 +2635,7 @@ def chat(data: dict):
                 customer_message=original_complaint or user_message,
                 pending_ticket=pending_ticket,
                 conversation_history=history[-10:],
+                company_config=_get_active_company_config(),
             )
 
             issue_summary = (
@@ -2286,56 +2724,6 @@ def chat(data: dict):
     print("INTERVENTION:", intervention)
     print("INTERVENTION CONFIDENCE:", intervention_confidence)
     # ------------------------------------------------
-    # CHECK AGENT-APPROVED RESOLUTIONS BEFORE INTERVENTION ROUTING
-    # ------------------------------------------------
-
-    try:
-        approved_match = retrieve_approved_solution(
-            user_message=issue_text,
-            intent=intent,
-        )
-    except Exception as exc:
-        print(f"Approved resolution retrieval failed: {exc}")
-        approved_match = None
-
-    if approved_match:
-        state["awaiting_resolution_feedback"] = {
-            "complaint": issue_text,
-            "intent": intent,
-            "intervention": intervention,
-            "intervention_confidence": intervention_confidence,
-            "matched_ticket": approved_match,
-        }
-
-        support_reply = (
-            "I found a solution previously approved by our support team "
-            "for a similar issue.\n\n"
-            f"{approved_match['solution']}\n\n"
-            "Did this resolve your issue? Please reply YES or NO."
-        )
-
-        print("INTENT:", intent)
-        print("INTERVENTION:", intervention)
-        print("RESPONSE SOURCE: agent_approved_resolution")
-        print("MATCHED TICKET:", approved_match["ticket_id"])
-
-        return _save_and_return(
-            state,
-            history,
-            user_message,
-            support_reply,
-            intent=intent,
-            intervention=intervention,
-            intervention_confidence=intervention_confidence,
-            historical_match=True,
-            matched_ticket=approved_match,
-            ticket_created=False,
-            response_source="agent_approved_resolution",
-            awaiting_resolution_feedback=True,
-            conversation_status="awaiting_resolution_feedback",
-        )
-    # ------------------------------------------------
-    # ------------------------------------------------
     # STEP 8: PROFESSIONAL CONVERSATION FOR HUMAN-REQUIRED ISSUES
     # ------------------------------------------------
 
@@ -2413,61 +2801,6 @@ def chat(data: dict):
 
    
     # ------------------------------------------------
-    # STEP 9: APPROVED RESOLUTIONS FIRST, THEN LEGACY RAG
-    # ------------------------------------------------
-
-    try:
-        approved_match = retrieve_approved_solution(
-            user_message=issue_text,
-            intent=intent,
-        )
-    except Exception as exc:
-        print(f"Approved resolution retrieval failed: {exc}")
-        approved_match = None
-
-    # --------------------------------------------
-    # A. AGENT-APPROVED RESOLUTION FOUND
-    # --------------------------------------------
-
-    if approved_match:
-
-        state["awaiting_resolution_feedback"] = {
-            "complaint": issue_text,
-            "intent": intent,
-            "intervention": intervention,
-            "intervention_confidence": intervention_confidence,
-            "matched_ticket": approved_match,
-        }
-
-        support_reply = (
-            "I found a solution previously approved by our support team "
-            "for a similar issue.\n\n"
-            f"{approved_match['solution']}\n\n"
-            "Did this resolve your issue? Please reply YES or NO."
-        )
-
-        print("INTENT:", intent)
-        print("INTERVENTION:", intervention)
-        print("RESPONSE SOURCE: agent_approved_resolution")
-        print("MATCHED TICKET:", approved_match["ticket_id"])
-
-        return _save_and_return(
-            state,
-            history,
-            user_message,
-            support_reply,
-            intent=intent,
-            intervention=intervention,
-            intervention_confidence=intervention_confidence,
-            historical_match=True,
-            matched_ticket=approved_match,
-            ticket_created=False,
-            response_source="agent_approved_resolution",
-            awaiting_resolution_feedback=True,
-            conversation_status="awaiting_resolution_feedback",
-        )
-
-    # --------------------------------------------
     # B. FALL BACK TO EXISTING LEGACY JSON RETRIEVAL
     # --------------------------------------------
 
@@ -2545,3 +2878,6 @@ app.include_router(image_router)
 app.include_router(ticket_router)
 app.include_router(company_router)
 app.include_router(knowledge_base_router)
+app.include_router(conversation_router)
+app.include_router(historical_solution_router)
+app.include_router(historical_attempt_router)

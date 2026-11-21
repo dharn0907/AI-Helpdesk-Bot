@@ -1,4 +1,5 @@
-﻿const API_BASE_URL = "http://127.0.0.1:8000";
+﻿
+const API_BASE_URL = "http://127.0.0.1:8000";
 
 // Fetch all tickets from the backend
 export const getTickets = async () => {
@@ -79,6 +80,46 @@ export const getTicketResolutionReview = async (ticketId) => {
   if (!response.ok) {
     throw new Error(
       result.detail || "Failed to fetch resolution review"
+    );
+  }
+
+  return result;
+};
+
+// AI ticket summarization
+export const summarizeTicket = async (ticketId, mode) => {
+  const response = await fetch(
+    `${API_BASE_URL}/tickets/${ticketId}/summarize`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ mode }),
+    }
+  );
+
+  const result = await response.json();
+
+  if (!response.ok) {
+    throw new Error(
+      result.detail || "Failed to summarize ticket."
+    );
+  }
+
+  return result;
+};
+// Fetch similar tickets
+export const getSimilarTickets = async (ticketId) => {
+  const response = await fetch(
+    `${API_BASE_URL}/tickets/${ticketId}/similar`
+  );
+
+  const result = await response.json();
+
+  if (!response.ok) {
+    throw new Error(
+      result.detail || "Failed to fetch similar tickets"
     );
   }
 

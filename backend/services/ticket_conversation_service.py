@@ -1,4 +1,6 @@
-﻿from services.llm_service import (
+import json
+
+from services.llm_service import (
     llm,
     extract_response_text,
     parse_json_response,
@@ -9,12 +11,14 @@ def interpret_ticket_message(
     customer_message: str,
     pending_ticket: dict,
     conversation_history: list = None,
+    company_config: dict = None,
 ) -> dict:
     """
     Analyse the customer's support conversation.
 
     Gemini identifies relevant details, missing information,
-    contradictions, corrections and the next useful question.
+    contradictions, corrections and the next useful question using
+    an adaptive, domain-aware investigation strategy.
 
     The backend remains responsible for ticket workflow.
     """
@@ -22,6 +26,11 @@ def interpret_ticket_message(
     original_complaint = pending_ticket.get("original_complaint", "")
     existing_details = pending_ticket.get("additional_details", "")
     existing_summary = pending_ticket.get("issue_summary", "")
+    company_context = json.dumps(
+        company_config or {},
+        ensure_ascii=False,
+        default=str,
+    )
 
     history_text = ""
 
@@ -47,6 +56,9 @@ DETAILS ALREADY COLLECTED:
 
 CURRENT ISSUE SUMMARY:
 {existing_summary or "Not available"}
+
+ACTIVE COMPANY / BOT CONTEXT (authoritative domain and support scope):
+{company_context if company_context != "{}" else "No company configuration supplied."}
 
 PENDING CONTRADICTIONS:
 {pending_ticket.get("pending_contradictions", [])}
@@ -94,6 +106,41 @@ UNCERTAIN:
 The meaning is genuinely unclear.
 
 SECOND: INVESTIGATE THE INFORMATION.
+
+ADAPTIVE INVESTIGATION STRATEGY (IMPORTANT):
+- Investigate in the context of the configured company's actual business,
+  products, services, systems, and support scope. Do not assume any industry
+  unless the company configuration supports it.
+- First understand what the customer is experiencing, what they were trying
+  to do, and what outcome they expected. If the issue is vague, clarify it
+  before asking for identifiers or technical details.
+- Build a complaint-specific investigation plan internally. Choose only the
+  facts that are diagnostically useful for THIS issue. Do not use a fixed
+  checklist or ask every example below.
+- Depending on the issue, relevant details may include the affected product,
+  service, feature, process or account area; expected versus actual result;
+  symptoms or error text; when it began; frequency; steps that trigger it;
+  device, browser, app version, location or environment; impact or urgency;
+  previous attempts and their results; or a necessary non-sensitive reference
+  and date. These are examples, not universal mandatory fields.
+- For technical/service issues, prioritize reproduction steps, actual and
+  expected behavior, error messages, timing, environment, and attempts when
+  relevant. For billing/transaction issues, collect only necessary non-secret
+  reference/date and reported outcome. For physical products, ask about the
+  product, symptoms, condition and relevant context. Adapt to other domains.
+- Use company configuration and retrieved support knowledge to avoid asking
+  irrelevant questions or facts the company already has. Never claim a system
+  was checked unless a backend/tool result confirms it.
+- Ask one highest-value next question that helps diagnose, reproduce, verify,
+  or route the issue. Keep it conversational, not a questionnaire.
+- If the customer does not know, refuses, or cannot provide a detail, record
+  that accurately and move to another useful question; do not ask again.
+- Stop when the summary is actionable for a support team. Do not prolong the
+  conversation to collect arbitrary amounts of information; set
+  information_complete true when sufficient.
+- Never request passwords, OTPs, full card/bank details, API keys, recovery
+  codes, or other authentication secrets.
+
 0. NEGATIVE ANSWERS AND UNAVAILABLE INFORMATION:
 
    - A negative response to the bot's previous question is still a
@@ -110,7 +157,64 @@ SECOND: INVESTIGATE THE INFORMATION.
    - Do not ask for the same unavailable information again.
    - Continue by asking one different, useful question if needed.
    - Never invent the missing information.
+
+STRICT INVESTIGATION RULES ? OVERRIDE GENERIC BEHAVIOUR:
+
+1. If the latest customer message directly answers the previous
+   assistant question, ALWAYS classify it as ADD_DETAIL.
+   Never ask whether that answer is relevant.
+
+2. Answers such as "yes", "no", "I already tried that",
+   "it did not work", "I don't know", "that's all", and
+   corrections must be interpreted using the conversation history.
+
+3. NEVER offer, suggest, or ask whether the customer wants
+   a human agent during normal information collection.
+   Continue investigating with one relevant question.
+   Only initiate human handoff when the customer explicitly
+   requests a human agent or explicitly asks to create a ticket.
+
+4. If the customer says they do not want a human and want
+   further investigation, respect that and continue investigating.
+   Do not ask about human support again.
+
+5. Before generating next_question, compare it against ALL
+   questions already asked and answered in the conversation.
+   Never ask a question again if its answer is already known.
+   This includes testing other devices, networks, browsers,
+   password resets, clearing cache, and troubleshooting steps.
+
+6. Use the accumulated answers to narrow the investigation.
+   Ask about a genuinely different missing fact that can help
+   diagnose THIS issue. Do not restart the investigation.
+
+7. If the customer says "that's all", "create the ticket now",
+   "stop asking", or equivalent, stop investigation immediately.
+   Mark information_complete true and preserve the summary.
+   The backend should proceed to its existing confirmation flow.
+
+8. Do not prolong the investigation unnecessarily.
+   Prioritize information that makes the eventual ticket useful
+   to the support team. Respect the customer's decision to stop.
+
 IMPORTANT: UNDERSTAND THE CUSTOMER'S MEANING FIRST.
+
+CRITICAL INVESTIGATION OVERRIDE:
+- Use ONLY troubleshooting steps explicitly confirmed by the customer
+  in the CURRENT conversation for this issue.
+- Never assume cache clearing, incognito, password reset,
+  another device, another network, or any other action was attempted.
+- Previous conversations, unrelated sessions, examples, and generic
+  assumptions are NOT evidence that a step was attempted.
+- If a step has not been confirmed, treat it as NOT TRIED.
+- Never offer ticket creation after only one diagnostic answer.
+- Continue troubleshooting by asking ONE relevant question at a time.
+- First suggest the simplest safe troubleshooting step that has
+  not already been attempted.
+- Ticket creation must not be suggested merely because information
+  is incomplete. Continue investigation instead.
+- If the customer explicitly requests a ticket, respect that request.
+
 
 - Before requesting investigation details, determine whether the
   latest customer message has a clear and understandable meaning

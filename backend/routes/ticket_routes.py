@@ -2,16 +2,17 @@
 """Ticket management APIs for human support agents."""
 
 import uuid
-
+import json
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from services.similar_ticket_service import find_similar_tickets
 
 from database.database import Base, engine, get_db
 from database.models import Company, Ticket, TicketResolutionReview
 from services.email_service import send_ticket_reply
-
+from services.llm_service import llm
 router = APIRouter(prefix="/tickets", tags=["Ticket Management"])
 
 Base.metadata.create_all(bind=engine)
@@ -35,6 +36,7 @@ def create_ticket(data: dict, db: Session = Depends(get_db)):
     ticket = Ticket(
         ticket_id=f"TKT-{uuid.uuid4().hex[:8].upper()}",
         session_id=session_id,
+        company_id=1,
         customer_message=customer_message,
         additional_details=additional_details,
         customer_email=customer_email,
@@ -283,3 +285,181 @@ def get_ticket_resolution_review(
         "approval_status": review.approval_status,
         "approved_solution": review.approved_solution
     }
+@router.post("/{ticket_id}/summarize")
+def summarize_ticket(
+    ticket_id: str,
+    data: dict,
+    db: Session = Depends(get_db)
+):
+    ticket = db.query(Ticket).filter(
+        Ticket.ticket_id == ticket_id
+    ).first()
+
+    if not ticket:
+        raise HTTPException(
+            status_code=404,
+            detail="Ticket not found."
+        )
+
+    mode = str(data.get("mode", "")).strip().lower()
+
+    if mode not in ["normal", "fields"]:
+        raise HTTPException(
+            status_code=400,
+            detail="Mode must be normal or fields."
+        )
+
+    ticket_context = f"""
+Customer complaint:
+{ticket.customer_message or ""}
+
+Additional customer information:
+{ticket.additional_details or ""}
+
+Customer email:
+{ticket.customer_email or ""}
+
+Ticket category:
+{ticket.intent or ""}
+
+Agent response:
+{ticket.agent_reply or ""}
+"""
+
+    if mode == "normal":
+
+        prompt = f"""
+You are an AI assistant helping a human support agent
+understand customer support tickets.
+
+Summarize the following ticket into one concise paragraph.
+
+Rules:
+- Clearly explain the customer's main problem.
+- Include relevant details.
+- Include troubleshooting already attempted if available.
+- Include the customer's expected outcome if available.
+- Do not invent information.
+- Do not repeat irrelevant information.
+- Do not use headings or bullet points.
+- Return only the summary paragraph.
+
+TICKET:
+{ticket_context}
+"""
+
+    else:
+
+        prompt = f"""
+You are an AI assistant helping a human support agent
+understand customer support tickets.
+
+Extract the relevant information into structured fields.
+
+Possible fields:
+- Issue
+- Product or Service
+- Error Message
+- Steps Already Tried
+- Expected Outcome
+- Actual Outcome
+- Customer Requirements
+- Relevant Technical Details
+- Impact
+
+Rules:
+- Extract only information explicitly available in the ticket.
+- Never invent or assume information.
+- Include only fields that contain actual information.
+- Omit missing fields completely.
+- Never write "Not provided", "Unknown", or "N/A".
+- Keep field values concise and informative.
+- Return valid JSON only.
+- Return a JSON object, not an array.
+- Do not include Markdown code fences.
+
+TICKET:
+{ticket_context}
+
+Return the JSON object.
+"""
+
+    try:
+        response = llm.invoke(prompt)
+
+        content = response.content
+
+        if isinstance(content, list):
+            content = "".join(
+                item.get("text", "")
+                for item in content
+                if isinstance(item, dict)
+            )
+
+        content = str(content).strip()
+
+        if mode == "normal":
+            return {
+                "ticket_id": ticket.ticket_id,
+                "mode": "normal",
+                "summary": content
+            }
+
+        # Remove Markdown code fences if returned by the LLM
+        if content.startswith("```"):
+            content = content.replace("```json", "")
+            content = content.replace("```", "")
+            content = content.strip()
+
+        extracted_fields = json.loads(content)
+
+        if not isinstance(extracted_fields, dict):
+            raise ValueError(
+                "AI response must be a JSON object."
+            )
+
+        # Remove empty or placeholder values
+        extracted_fields = {
+            key: value
+            for key, value in extracted_fields.items()
+            if value is not None
+            and str(value).strip()
+            and str(value).strip().lower() not in [
+                "not provided",
+                "unknown",
+                "n/a",
+                "none",
+                "null"
+            ]
+        }
+
+        return {
+            "ticket_id": ticket.ticket_id,
+            "mode": "fields",
+            "fields": extracted_fields
+        }
+
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Ticket summarization failed: {str(exc)}"
+        )
+@router.get("/{ticket_id}/similar")
+def get_similar_tickets(
+    ticket_id: str,
+    db: Session = Depends(get_db),
+):
+    """Find similar tickets for the selected ticket."""
+
+    result = find_similar_tickets(
+        db=db,
+        ticket_id=ticket_id,
+    )
+
+    if result is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Ticket not found.",
+        )
+
+    return result

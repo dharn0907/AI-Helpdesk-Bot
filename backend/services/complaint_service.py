@@ -58,9 +58,27 @@ def classify_complaint(message: str):
         )
 
     predicted_intent = id_to_label[predicted_id.item()]
+    intent_confidence = round(confidence.item(), 4)
+
+    # Safeguard: obvious account-login complaints must not be
+    # mislabeled as cancellation or unrelated issue categories.
+    normalized_message = " ".join(message.lower().split())
+    login_cues = (
+        "login", "log in", "logging in",
+        "sign in", "signin", "sign-in",
+        "forgot password", "reset password",
+        "incorrect password", "wrong password",
+        "unable to access account", "can't access account",
+        "cannot access account", "account locked",
+        "otp", "one time password",
+    )
+
+    if any(cue in normalized_message for cue in login_cues):
+        predicted_intent = "login_issue"
+        intent_confidence = 0.99
 
     return {
         "message": message,
         "intent": predicted_intent,
-        "confidence": round(confidence.item(), 4)
+        "confidence": intent_confidence
     }

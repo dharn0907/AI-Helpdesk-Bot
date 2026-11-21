@@ -48,7 +48,7 @@ complaint_embeddings = model.encode(
 def retrieve_approved_solution(
     user_message: str,
     intent: str,
-    threshold: float = 0.50,
+    threshold: float = 0.40,
 ):
     """
     Retrieve the most similar agent-approved resolution
@@ -85,7 +85,15 @@ def retrieve_approved_solution(
             .all()
         )
 
+        print("\\n===== APPROVED RESOLUTION DEBUG =====")
+        print("USER COMPLAINT:", user_message)
+        print("USER INTENT:", intent)
+        print("ACTIVE COMPANY ID:", company.id)
+        print("APPROVED RECORD COUNT:", len(approved_records))
+
         if not approved_records:
+            print("RESULT: No approved records for this company/intent")
+            print("===== DEBUG END =====\\n")
             return None
 
         approved_complaints = [
@@ -110,10 +118,20 @@ def retrieve_approved_solution(
         best_index = int(similarities.argmax())
         best_score = float(similarities[best_index])
 
+        matched_record = approved_records[best_index]
+
+        print("BEST MATCH TICKET:", matched_record.ticket_id)
+        print("MATCHED COMPLAINT:", matched_record.complaint)
+        print("SIMILARITY SCORE:", round(best_score, 4))
+        print("THRESHOLD:", threshold)
+
         if best_score < threshold:
+            print("RESULT: Rejected because similarity is below threshold")
+            print("===== DEBUG END =====\\n")
             return None
 
-        matched_record = approved_records[best_index]
+        print("RESULT: APPROVED MATCH FOUND")
+        print("===== DEBUG END =====\\n")
 
         return {
             "ticket_id": matched_record.ticket_id,

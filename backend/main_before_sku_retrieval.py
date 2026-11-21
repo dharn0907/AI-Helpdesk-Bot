@@ -2,6 +2,8 @@
 
 import re
 import uuid
+import asyncio
+from datetime import datetime, timezone
 
 from fastapi import FastAPI, HTTPException
 from services.first_level_intent_service import classify_first_level_intent
@@ -182,10 +184,70 @@ def generate_llm_response(
     )
 
 
+import asyncio
+from datetime import datetime, timezone
+
 app = FastAPI(title="AI Helpdesk Bot")
+
+
+async def historical_solution_timeout_checker():
+    while True:
+        db = SessionLocal()
+
+        try:
+            pending_attempts = (
+                db.query(HistoricalSolutionAttempt, Company)
+                .join(
+                    Company,
+                    HistoricalSolutionAttempt.company_id == Company.id,
+                )
+                .filter(
+                    HistoricalSolutionAttempt.attempt_status == "pending",
+                    Company.historical_solution_timeout_enabled == True,
+                )
+                .all()
+            )
+
+            now = datetime.now(timezone.utc)
+
+            for attempt, company in pending_attempts:
+                created_at = attempt.created_at
+
+                if created_at is None:
+                    continue
+
+                # Treat timezone-naive timestamps as UTC.
+                if created_at.tzinfo is None:
+                    created_at = created_at.replace(tzinfo=timezone.utc)
+
+                elapsed_hours = (
+                    now - created_at
+                ).total_seconds() / 3600
+
+                timeout_hours = company.historical_solution_timeout_hours
+
+                if elapsed_hours >= timeout_hours:
+                    attempt.attempt_status = "abandoned"
+
+            db.commit()
+
+        except Exception as e:
+            db.rollback()
+            print(f"Historical timeout checker error: {e}")
+
+        finally:
+            db.close()
+
+        await asyncio.sleep(60)
+
+
 @app.on_event("startup")
-def initialize_knowledge_base_tables():
+async def initialize_knowledge_base_tables():
     Base.metadata.create_all(bind=engine)
+
+    asyncio.create_task(
+        historical_solution_timeout_checker()
+    )
 
 # Conversation state is currently stored in memory. For production, move this
 # to a persistent store such as Redis or the database.
