@@ -403,3 +403,169 @@ class HistoricalSolutionAttempt(Base):
         server_default=func.now(),
         onupdate=func.now(),
     )
+# ============================================================
+# NEW SUPABASE MODELS
+# ============================================================
+
+from sqlalchemy import BigInteger, Numeric
+from sqlalchemy.dialects.postgresql import JSONB, UUID
+
+
+class OrganizationMember(Base):
+    __tablename__ = "organization_members"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    organization_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
+    auth_user_id = Column(UUID(as_uuid=False), ForeignKey("auth.users.id"), nullable=True)
+    email = Column(String, nullable=False)
+    full_name = Column(String, nullable=True)
+    role = Column(String, nullable=False, server_default="support_agent")
+    status = Column(String, nullable=False, server_default="pending")
+    email_verified_at = Column(DateTime(timezone=True), nullable=True)
+    approved_at = Column(DateTime(timezone=True), nullable=True)
+    approved_by = Column(BigInteger, ForeignKey("organization_members.id"), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class Chatbot(Base):
+    __tablename__ = "chatbots"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    organization_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
+    public_id = Column(UUID(as_uuid=False), nullable=False, server_default=func.gen_random_uuid())
+    bot_name = Column(String, nullable=False)
+    description = Column(Text, nullable=True)
+    status = Column(String, nullable=False, server_default="active")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class OrganizationSettings(Base):
+    __tablename__ = "organization_settings"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    organization_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, unique=True)
+    settings = Column(JSONB, nullable=False, server_default="{}")
+    support_email = Column(String, nullable=True)
+    support_email_verified = Column(Boolean, nullable=False, server_default="false")
+    timezone = Column(String, nullable=True, server_default="Asia/Kolkata")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class ChatbotChannel(Base):
+    __tablename__ = "chatbot_channels"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    chatbot_id = Column(BigInteger, ForeignKey("chatbots.id", ondelete="CASCADE"), nullable=False, index=True)
+    channel_type = Column(String, nullable=False)
+    channel_name = Column(String, nullable=True)
+    channel_identifier = Column(Text, nullable=True)
+    configuration = Column(JSONB, nullable=False, server_default="{}")
+    is_active = Column(Boolean, nullable=False, server_default="true")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class KnowledgeBase(Base):
+    __tablename__ = "knowledge_bases"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    organization_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
+    chatbot_id = Column(BigInteger, ForeignKey("chatbots.id", ondelete="SET NULL"), nullable=True)
+    name = Column(String, nullable=False)
+    description = Column(Text, nullable=True)
+    status = Column(String, nullable=False, server_default="active")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class DocumentEmbedding(Base):
+    __tablename__ = "document_embeddings"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    organization_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
+    knowledge_base_id = Column(BigInteger, ForeignKey("knowledge_bases.id", ondelete="SET NULL"), nullable=True)
+    document_id = Column(Integer, ForeignKey("knowledge_base_files.id", ondelete="CASCADE"), nullable=True)
+    record_id = Column(Integer, ForeignKey("knowledge_base_records.id", ondelete="CASCADE"), nullable=True)
+    content = Column(Text, nullable=False)
+    embedding = Column(Text, nullable=True)
+    metadata_json = Column("metadata", JSONB, nullable=False, server_default="{}")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class AIConfiguration(Base):
+    __tablename__ = "ai_configurations"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    organization_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
+    chatbot_id = Column(BigInteger, ForeignKey("chatbots.id", ondelete="SET NULL"), nullable=True)
+    provider = Column(String, nullable=True, server_default="google")
+    model_name = Column(String, nullable=True)
+    temperature = Column(Numeric, nullable=True, server_default="0.70")
+    max_tokens = Column(Integer, nullable=True)
+    configuration = Column(JSONB, nullable=False, server_default="{}")
+    is_active = Column(Boolean, nullable=False, server_default="true")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class AIExecutionLog(Base):
+    __tablename__ = "ai_execution_logs"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    organization_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=True, index=True)
+    chatbot_id = Column(BigInteger, ForeignKey("chatbots.id", ondelete="SET NULL"), nullable=True)
+    conversation_id = Column(Integer, ForeignKey("conversations.id", ondelete="SET NULL"), nullable=True)
+    operation = Column(String, nullable=True)
+    model_name = Column(String, nullable=True)
+    input_data = Column(JSONB, nullable=True)
+    output_data = Column(JSONB, nullable=True)
+    status = Column(String, nullable=False, server_default="success")
+    error_message = Column(Text, nullable=True)
+    execution_time_ms = Column(Integer, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class AIUsageLog(Base):
+    __tablename__ = "ai_usage_logs"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    organization_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=True, index=True)
+    chatbot_id = Column(BigInteger, ForeignKey("chatbots.id", ondelete="SET NULL"), nullable=True)
+    model_name = Column(String, nullable=True)
+    input_tokens = Column(Integer, nullable=True, server_default="0")
+    output_tokens = Column(Integer, nullable=True, server_default="0")
+    total_tokens = Column(Integer, nullable=True, server_default="0")
+    estimated_cost = Column(Numeric, nullable=True, server_default="0")
+    operation = Column(String, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class TicketAssignment(Base):
+    __tablename__ = "ticket_assignments"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    ticket_id = Column(Integer, ForeignKey("tickets.id", ondelete="CASCADE"), nullable=False, index=True)
+    organization_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
+    assigned_member_id = Column(BigInteger, ForeignKey("organization_members.id", ondelete="SET NULL"), nullable=True)
+    assigned_by = Column(BigInteger, ForeignKey("organization_members.id", ondelete="SET NULL"), nullable=True)
+    assignment_status = Column(String, nullable=True, server_default="active")
+    assigned_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+
+
+class TicketComment(Base):
+    __tablename__ = "ticket_comments"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    ticket_id = Column(Integer, ForeignKey("tickets.id", ondelete="CASCADE"), nullable=False, index=True)
+    organization_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
+    author_member_id = Column(BigInteger, ForeignKey("organization_members.id", ondelete="SET NULL"), nullable=True)
+    comment = Column(Text, nullable=False)
+    is_internal = Column(Boolean, nullable=False, server_default="true")
+    comment_type = Column(String, nullable=True, server_default="comment")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
