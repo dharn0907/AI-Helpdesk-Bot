@@ -57,11 +57,7 @@ def find_similar_tickets(
             "similar_tickets": [],
         }
 
-    unresolved_statuses = [
-        "open",
-        "in progress",
-        "pending",
-    ]
+
 
     candidates = (
         db.query(Ticket)
@@ -69,9 +65,6 @@ def find_similar_tickets(
             Ticket.company_id == target_ticket.company_id,
             Ticket.ticket_id != target_ticket.ticket_id,
             Ticket.intent == target_ticket.intent,
-            Ticket.status.ilike("open")
-            | Ticket.status.ilike("in progress")
-            | Ticket.status.ilike("pending"),
         )
         .order_by(Ticket.created_at.desc())
         .limit(500)
