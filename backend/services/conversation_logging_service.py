@@ -1,16 +1,19 @@
+
 from database.database import SessionLocal
 from database.models import Conversation, ConversationMessage
 from sqlalchemy.sql import func
 
+
 def save_conversation_exchange(
     session_id,
     company_id,
+    chatbot_id,
     customer_id,
     customer_email,
     user_message,
     bot_reply,
 ):
-    """Persist a customer-bot exchange."""
+    """Persist a customer-bot exchange scoped to its company and chatbot."""
 
     if not session_id or not company_id:
         print("CONVERSATION LOG: Missing session/company ID.")
@@ -24,6 +27,7 @@ def save_conversation_exchange(
             .filter(
                 Conversation.session_id == session_id,
                 Conversation.company_id == company_id,
+                Conversation.chatbot_id == chatbot_id,
             )
             .first()
         )
@@ -32,6 +36,7 @@ def save_conversation_exchange(
             conversation = Conversation(
                 session_id=session_id,
                 company_id=company_id,
+                chatbot_id=chatbot_id,
                 customer_id=customer_id,
                 customer_email=customer_email,
                 status="Active",
@@ -69,7 +74,10 @@ def save_conversation_exchange(
 
         db.commit()
 
-        print(f"CONVERSATION LOG: Saved {session_id}")
+        print(
+            f"CONVERSATION LOG: Saved session={session_id}, "
+            f"company={company_id}, chatbot={chatbot_id}"
+        )
 
     except Exception as exc:
         db.rollback()

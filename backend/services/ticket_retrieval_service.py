@@ -8,7 +8,7 @@ from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 
 from database.database import SessionLocal
-from database.models import Company, TicketResolutionReview
+from database.models import TicketResolutionReview
 
 
 # ------------------------------------------------
@@ -42,17 +42,19 @@ complaint_embeddings = model.encode(
 
 
 # ------------------------------------------------
-# NEW: AGENT-APPROVED DATABASE RETRIEVAL
+# AGENT-APPROVED DATABASE RETRIEVAL
 # ------------------------------------------------
 
 def retrieve_approved_solution(
     user_message: str,
     intent: str,
+    company_id: int,
+    chatbot_id: int,
     threshold: float = 0.40,
 ):
     """
     Retrieve the most similar agent-approved resolution
-    belonging to the currently active company.
+    belonging to the same company and chatbot.
 
     Rejected and unreviewed resolutions are excluded.
     """
@@ -60,23 +62,18 @@ def retrieve_approved_solution(
     if not user_message or not user_message.strip():
         return None
 
+    if company_id is None or chatbot_id is None:
+        print("APPROVED RETRIEVAL: Missing company_id or chatbot_id")
+        return None
+
     db = SessionLocal()
 
     try:
-        company = (
-            db.query(Company)
-            .filter(Company.is_active.is_(True))
-            .order_by(Company.id.asc())
-            .first()
-        )
-
-        if not company:
-            return None
-
         approved_records = (
             db.query(TicketResolutionReview)
             .filter(
-                TicketResolutionReview.company_id == company.id,
+                TicketResolutionReview.company_id == company_id,
+                TicketResolutionReview.chatbot_id == chatbot_id,
                 TicketResolutionReview.approval_status == "approved",
                 TicketResolutionReview.intent == intent,
                 TicketResolutionReview.approved_solution.isnot(None),
@@ -85,15 +82,16 @@ def retrieve_approved_solution(
             .all()
         )
 
-        print("\\n===== APPROVED RESOLUTION DEBUG =====")
+        print("\n===== APPROVED RESOLUTION DEBUG =====")
         print("USER COMPLAINT:", user_message)
         print("USER INTENT:", intent)
-        print("ACTIVE COMPANY ID:", company.id)
+        print("COMPANY ID:", company_id)
+        print("CHATBOT ID:", chatbot_id)
         print("APPROVED RECORD COUNT:", len(approved_records))
 
         if not approved_records:
-            print("RESULT: No approved records for this company/intent")
-            print("===== DEBUG END =====\\n")
+            print("RESULT: No approved records for this company/chatbot/intent")
+            print("===== DEBUG END =====\n")
             return None
 
         approved_complaints = [
@@ -127,11 +125,11 @@ def retrieve_approved_solution(
 
         if best_score < threshold:
             print("RESULT: Rejected because similarity is below threshold")
-            print("===== DEBUG END =====\\n")
+            print("===== DEBUG END =====\n")
             return None
 
         print("RESULT: APPROVED MATCH FOUND")
-        print("===== DEBUG END =====\\n")
+        print("===== DEBUG END =====\n")
 
         return {
             "ticket_id": matched_record.ticket_id,
@@ -139,6 +137,7 @@ def retrieve_approved_solution(
             "solution": matched_record.approved_solution,
             "intent": matched_record.intent,
             "company_id": matched_record.company_id,
+            "chatbot_id": matched_record.chatbot_id,
             "similarity": round(best_score, 4),
             "source": "agent_approved_resolution",
         }
@@ -148,7 +147,7 @@ def retrieve_approved_solution(
 
 
 # ------------------------------------------------
-# EXISTING: LEGACY JSON RETRIEVAL
+# LEGACY JSON RETRIEVAL
 # ------------------------------------------------
 
 def retrieve_solution(user_message: str, intent: str):

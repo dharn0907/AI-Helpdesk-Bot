@@ -69,7 +69,8 @@ function App() {
           body: JSON.stringify({
             message: requestText,
             session_id: sessionIdRef.current,
-            customer_id: customerIdRef.current
+            customer_id: customerIdRef.current,
+            bot_public_id: import.meta.env.VITE_BOT_PUBLIC_ID,
           })
         }
       );

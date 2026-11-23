@@ -15,14 +15,11 @@ def detect_duplicate_ticket(
     customer_message,
     intent,
     additional_details=None,
-    customer_email=None
+    customer_email=None,
+    company_id=None,
+    chatbot_id=None,
 ):
-    """
-    Find a potential duplicate among unresolved tickets
-    belonging to the same customer email.
-
-    This function never creates, closes, or blocks tickets.
-    """
+    """Find duplicates within the same company, chatbot, and customer."""
 
     if not customer_message or not customer_message.strip():
         return None
@@ -30,15 +27,18 @@ def detect_duplicate_ticket(
     if not customer_email or not customer_email.strip():
         return None
 
-    unresolved_tickets = (
+    query = (
         db.query(Ticket)
         .filter(
             func.lower(Ticket.status).in_(["open", "in progress"]),
             Ticket.intent == intent,
-            func.lower(Ticket.customer_email) == customer_email.strip().lower()
+            func.lower(Ticket.customer_email) == customer_email.strip().lower(),
+            Ticket.company_id == company_id,
+            Ticket.chatbot_id == chatbot_id,
         )
-        .all()
     )
+
+    unresolved_tickets = query.all()
 
     if not unresolved_tickets:
         return None
@@ -86,5 +86,5 @@ def detect_duplicate_ticket(
         "ticket_id": matched_ticket.ticket_id,
         "status": matched_ticket.status,
         "customer_message": matched_ticket.customer_message,
-        "similarity": round(best_score, 4)
+        "similarity": round(best_score, 4),
     }

@@ -8,6 +8,7 @@ from services.ticket_retrieval_service import model
 
 SIMILARITY_THRESHOLD = 0.60
 
+
 def _ticket_text(ticket):
     """Combine complaint and additional details for comparison."""
 
@@ -25,13 +26,7 @@ def find_similar_tickets(
     threshold=SIMILARITY_THRESHOLD,
     max_results=10,
 ):
-    """
-    Find semantically similar unresolved tickets from the same company.
-
-    Only tickets with the same intent are compared.
-
-    This function does not merge, modify, close, or reply to tickets.
-    """
+    """Find semantically similar tickets within the same chatbot."""
 
     target_ticket = (
         db.query(Ticket)
@@ -42,11 +37,11 @@ def find_similar_tickets(
     if not target_ticket:
         return None
 
-    if not target_ticket.company_id:
+    if not target_ticket.company_id or not target_ticket.chatbot_id:
         return {
             "ticket_id": target_ticket.ticket_id,
             "similar_tickets": [],
-            "message": "Ticket has no company association.",
+            "message": "Ticket has no company or chatbot association.",
         }
 
     target_text = _ticket_text(target_ticket)
@@ -57,12 +52,11 @@ def find_similar_tickets(
             "similar_tickets": [],
         }
 
-
-
     candidates = (
         db.query(Ticket)
         .filter(
             Ticket.company_id == target_ticket.company_id,
+            Ticket.chatbot_id == target_ticket.chatbot_id,
             Ticket.ticket_id != target_ticket.ticket_id,
             Ticket.intent == target_ticket.intent,
         )
@@ -75,6 +69,7 @@ def find_similar_tickets(
         return {
             "ticket_id": target_ticket.ticket_id,
             "similar_tickets": [],
+            "total_matches": 0,
         }
 
     candidate_texts = [
@@ -91,6 +86,7 @@ def find_similar_tickets(
         return {
             "ticket_id": target_ticket.ticket_id,
             "similar_tickets": [],
+            "total_matches": 0,
         }
 
     valid_candidates = [
@@ -147,6 +143,7 @@ def find_similar_tickets(
     return {
         "ticket_id": target_ticket.ticket_id,
         "company_id": target_ticket.company_id,
+        "chatbot_id": target_ticket.chatbot_id,
         "intent": target_ticket.intent,
         "similar_tickets": matches,
         "total_matches": len(matches),

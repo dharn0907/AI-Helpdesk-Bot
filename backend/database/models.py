@@ -8,6 +8,7 @@ from sqlalchemy import (
     DateTime,
     Boolean,
     ForeignKey,
+    BigInteger,
     Float,
 )
 from sqlalchemy.sql import func
@@ -112,7 +113,13 @@ class Ticket(Base):
     ForeignKey("companies.id", ondelete="CASCADE"),
     nullable=True,
     index=True,
-)
+    )
+    chatbot_id = Column(
+        BigInteger,
+        ForeignKey("chatbots.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
 
     id = Column(Integer, primary_key=True, index=True)
 
@@ -227,6 +234,13 @@ class TicketResolutionReview(Base):
         Integer,
         ForeignKey("companies.id", ondelete="CASCADE"),
         nullable=False,
+       
+        index=True,
+    )
+    chatbot_id = Column(
+        BigInteger,
+        ForeignKey("chatbots.id", ondelete="SET NULL"),
+        nullable=True,
         index=True,
     )
 
@@ -262,6 +276,13 @@ class Conversation(Base):
         index=True,
     )
 
+    chatbot_id = Column(
+        BigInteger,
+        ForeignKey("chatbots.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
     customer_id = Column(String(255), nullable=True)
 
     customer_email = Column(String(255), nullable=True)
@@ -278,7 +299,6 @@ class Conversation(Base):
         server_default=func.now(),
         onupdate=func.now(),
     )
-
 
 class ConversationMessage(Base):
 
@@ -352,6 +372,12 @@ class HistoricalSolutionAttempt(Base):
         Integer,
         ForeignKey("companies.id", ondelete="CASCADE"),
         nullable=False,
+        index=True,
+    )
+    chatbot_id = Column(
+        BigInteger,
+        ForeignKey("chatbots.id", ondelete="SET NULL"),
+        nullable=True,
         index=True,
     )
 

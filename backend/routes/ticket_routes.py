@@ -1,5 +1,5 @@
 
-"""Ticket management APIs for human support agents."""
+"""Tenant-scoped ticket management APIs."""
 
 import uuid
 import json
@@ -7,42 +7,111 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from services.similar_ticket_service import find_similar_tickets
 
 from database.database import Base, engine, get_db
-from database.models import Company, Ticket, TicketResolutionReview
+from database.models import (
+    Company,
+    Chatbot,
+    Ticket,
+    TicketResolutionReview,
+)
+from services.similar_ticket_service import find_similar_tickets
 from services.email_service import send_ticket_reply
 from services.llm_service import llm
+
+
 router = APIRouter(prefix="/tickets", tags=["Ticket Management"])
 
 Base.metadata.create_all(bind=engine)
 
 
+def get_active_chatbot(db, chatbot_id):
+    """Validate chatbot and its owning organization."""
+
+    chatbot = (
+        db.query(Chatbot)
+        .filter(
+            Chatbot.id == chatbot_id,
+            Chatbot.status == "active",
+        )
+        .first()
+    )
+
+    if not chatbot:
+        raise HTTPException(
+            status_code=404,
+            detail="Chatbot not found or inactive.",
+        )
+
+    company = (
+        db.query(Company)
+        .filter(
+            Company.id == chatbot.organization_id,
+            Company.is_active.is_(True),
+        )
+        .first()
+    )
+
+    if not company:
+        raise HTTPException(
+            status_code=404,
+            detail="Organization not found or inactive.",
+        )
+
+    return chatbot, company
+
+
+def get_scoped_ticket(db, ticket_id, chatbot_id):
+    """Retrieve a ticket belonging only to the specified chatbot."""
+
+    return (
+        db.query(Ticket)
+        .filter(
+            Ticket.ticket_id == ticket_id,
+            Ticket.chatbot_id == chatbot_id,
+        )
+        .first()
+    )
+
+
 @router.post("/")
 def create_ticket(data: dict, db: Session = Depends(get_db)):
 
-    customer_message = data.get("customer_message", "").strip()
+    customer_message = str(
+        data.get("customer_message", "")
+    ).strip()
+
     intent = data.get("intent", "general_enquiry")
     session_id = data.get("session_id")
     additional_details = data.get("additional_details", "")
     customer_email = data.get("customer_email")
+    chatbot_id = data.get("chatbot_id")
 
     if not customer_message:
         raise HTTPException(
             status_code=400,
-            detail="Customer complaint cannot be empty."
+            detail="Customer complaint cannot be empty.",
         )
+
+    if not chatbot_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Chatbot ID is required.",
+        )
+
+    chatbot, company = get_active_chatbot(db, chatbot_id)
 
     ticket = Ticket(
         ticket_id=f"TKT-{uuid.uuid4().hex[:8].upper()}",
         session_id=session_id,
-        company_id=1,
+        company_id=company.id,
+        chatbot_id=chatbot.id,
         customer_message=customer_message,
         additional_details=additional_details,
         customer_email=customer_email,
         intent=intent,
         priority="Medium",
-        status="Open"
+        status="Open",
     )
 
     db.add(ticket)
@@ -52,31 +121,42 @@ def create_ticket(data: dict, db: Session = Depends(get_db)):
     return {
         "message": "Ticket created successfully.",
         "ticket_id": ticket.ticket_id,
-        "status": ticket.status
+        "status": ticket.status,
+        "chatbot_id": ticket.chatbot_id,
     }
 
 
 @router.get("/")
-def get_all_tickets(db: Session = Depends(get_db)):
+def get_all_tickets(
+    chatbot_id: int,
+    db: Session = Depends(get_db),
+):
 
-    tickets = db.query(Ticket).order_by(
-        Ticket.created_at.desc()
-    ).all()
+    get_active_chatbot(db, chatbot_id)
+
+    tickets = (
+        db.query(Ticket)
+        .filter(Ticket.chatbot_id == chatbot_id)
+        .order_by(Ticket.created_at.desc())
+        .all()
+    )
 
     return tickets
 
 
 @router.get("/{ticket_id}")
-def get_ticket(ticket_id: str, db: Session = Depends(get_db)):
+def get_ticket(
+    ticket_id: str,
+    chatbot_id: int,
+    db: Session = Depends(get_db),
+):
 
-    ticket = db.query(Ticket).filter(
-        Ticket.ticket_id == ticket_id
-    ).first()
+    ticket = get_scoped_ticket(db, ticket_id, chatbot_id)
 
     if not ticket:
         raise HTTPException(
             status_code=404,
-            detail="Ticket not found."
+            detail="Ticket not found.",
         )
 
     return ticket
@@ -86,31 +166,31 @@ def get_ticket(ticket_id: str, db: Session = Depends(get_db)):
 def update_ticket(
     ticket_id: str,
     data: dict,
-    db: Session = Depends(get_db)
+    chatbot_id: int,
+    db: Session = Depends(get_db),
 ):
 
-    ticket = db.query(Ticket).filter(
-        Ticket.ticket_id == ticket_id
-    ).first()
+    ticket = get_scoped_ticket(db, ticket_id, chatbot_id)
 
     if not ticket:
         raise HTTPException(
             status_code=404,
-            detail="Ticket not found."
+            detail="Ticket not found.",
         )
 
     if "status" in data:
+
         allowed_statuses = [
             "Open",
             "In Progress",
             "Resolved",
-            "Closed"
+            "Closed",
         ]
 
         if data["status"] not in allowed_statuses:
             raise HTTPException(
                 status_code=400,
-                detail="Invalid ticket status."
+                detail="Invalid ticket status.",
             )
 
         ticket.status = data["status"]
@@ -125,10 +205,9 @@ def update_ticket(
         if not agent_reply:
             raise HTTPException(
                 status_code=400,
-                detail="Agent reply cannot be empty."
+                detail="Agent reply cannot be empty.",
             )
 
-        # Save the reply first, even if email delivery later fails.
         ticket.agent_reply = agent_reply
 
         db.commit()
@@ -138,7 +217,7 @@ def update_ticket(
             customer_email=ticket.customer_email,
             ticket_id=ticket.ticket_id,
             customer_message=ticket.customer_message,
-            agent_reply=agent_reply
+            agent_reply=agent_reply,
         )
 
     else:
@@ -151,45 +230,46 @@ def update_ticket(
         "status": ticket.status,
         "agent_reply": ticket.agent_reply,
         "email_sent": email_sent,
-        "email_message": email_message
+        "email_message": email_message,
     }
-
 
 
 @router.post("/{ticket_id}/resolution-review")
 def review_ticket_resolution(
     ticket_id: str,
     data: dict,
-    db: Session = Depends(get_db)
+    chatbot_id: int,
+    db: Session = Depends(get_db),
 ):
-    ticket = db.query(Ticket).filter(
-        Ticket.ticket_id == ticket_id
-    ).first()
+
+    ticket = get_scoped_ticket(db, ticket_id, chatbot_id)
 
     if not ticket:
         raise HTTPException(
             status_code=404,
-            detail="Ticket not found."
+            detail="Ticket not found.",
         )
 
     if ticket.status not in ["Resolved", "Closed"]:
         raise HTTPException(
             status_code=400,
-            detail="Only resolved or closed tickets can be reviewed."
+            detail="Only resolved or closed tickets can be reviewed.",
         )
 
     if not ticket.agent_reply or not ticket.agent_reply.strip():
         raise HTTPException(
             status_code=400,
-            detail="The ticket must have an agent reply before review."
+            detail="The ticket must have an agent reply before review.",
         )
 
-    decision = str(data.get("decision", "")).strip().lower()
+    decision = str(
+        data.get("decision", "")
+    ).strip().lower()
 
     if decision not in ["yes", "no"]:
         raise HTTPException(
             status_code=400,
-            detail="Decision must be yes or no."
+            detail="Decision must be yes or no.",
         )
 
     reusable_solution = str(
@@ -199,17 +279,7 @@ def review_ticket_resolution(
     if decision == "yes" and not reusable_solution:
         raise HTTPException(
             status_code=400,
-            detail="Please provide a reusable solution before approving."
-        )
-
-    company = db.query(Company).filter(
-        Company.is_active.is_(True)
-    ).order_by(Company.id.asc()).first()
-
-    if not company:
-        raise HTTPException(
-            status_code=400,
-            detail="No active company is available."
+            detail="Please provide a reusable solution before approving.",
         )
 
     review = db.query(TicketResolutionReview).filter(
@@ -219,23 +289,31 @@ def review_ticket_resolution(
     if not review:
         review = TicketResolutionReview(
             ticket_id=ticket.ticket_id,
-            company_id=company.id,
+            company_id=ticket.company_id,
+            chatbot_id=ticket.chatbot_id,
             complaint=ticket.customer_message,
-            intent=ticket.intent
+            intent=ticket.intent,
         )
+
         db.add(review)
 
-    review.company_id = company.id
+    review.company_id = ticket.company_id
+    review.chatbot_id = ticket.chatbot_id
     review.complaint = ticket.customer_message
     review.intent = ticket.intent
+
     review.approval_status = (
         "approved" if decision == "yes" else "rejected"
     )
+
     review.approved_solution = (
         reusable_solution if decision == "yes" else ""
     )
+
     review.approved_at = (
-        datetime.now(timezone.utc) if decision == "yes" else None
+        datetime.now(timezone.utc)
+        if decision == "yes"
+        else None
     )
 
     db.commit()
@@ -249,56 +327,63 @@ def review_ticket_resolution(
         ),
         "ticket_id": ticket.ticket_id,
         "approval_status": review.approval_status,
-        "approved_solution": review.approved_solution
+        "approved_solution": review.approved_solution,
     }
-
 
 
 @router.get("/{ticket_id}/resolution-review")
 def get_ticket_resolution_review(
     ticket_id: str,
-    db: Session = Depends(get_db)
+    chatbot_id: int,
+    db: Session = Depends(get_db),
 ):
-    ticket = db.query(Ticket).filter(
-        Ticket.ticket_id == ticket_id
-    ).first()
+
+    ticket = get_scoped_ticket(db, ticket_id, chatbot_id)
 
     if not ticket:
         raise HTTPException(
             status_code=404,
-            detail="Ticket not found."
+            detail="Ticket not found.",
         )
 
-    review = db.query(TicketResolutionReview).filter(
-        TicketResolutionReview.ticket_id == ticket.ticket_id
-    ).first()
+    review = (
+        db.query(TicketResolutionReview)
+        .filter(
+            TicketResolutionReview.ticket_id == ticket.ticket_id,
+            TicketResolutionReview.company_id == ticket.company_id,
+            TicketResolutionReview.chatbot_id == ticket.chatbot_id,
+        )
+        .first()
+    )
 
     if not review:
         return {
             "ticket_id": ticket.ticket_id,
             "approval_status": None,
-            "approved_solution": ""
+            "approved_solution": "",
         }
 
     return {
         "ticket_id": ticket.ticket_id,
         "approval_status": review.approval_status,
-        "approved_solution": review.approved_solution
+        "approved_solution": review.approved_solution,
     }
+
+
 @router.post("/{ticket_id}/summarize")
 def summarize_ticket(
     ticket_id: str,
     data: dict,
-    db: Session = Depends(get_db)
+    chatbot_id: int,
+    db: Session = Depends(get_db),
 ):
-    ticket = db.query(Ticket).filter(
-        Ticket.ticket_id == ticket_id
-    ).first()
+
+    ticket = get_scoped_ticket(db, ticket_id, chatbot_id)
 
     if not ticket:
         raise HTTPException(
             status_code=404,
-            detail="Ticket not found."
+            detail="Ticket not found.",
         )
 
     mode = str(data.get("mode", "")).strip().lower()
@@ -306,7 +391,7 @@ def summarize_ticket(
     if mode not in ["normal", "fields"]:
         raise HTTPException(
             status_code=400,
-            detail="Mode must be normal or fields."
+            detail="Mode must be normal or fields.",
         )
 
     ticket_context = f"""
@@ -385,8 +470,8 @@ Return the JSON object.
 """
 
     try:
-        response = llm.invoke(prompt)
 
+        response = llm.invoke(prompt)
         content = response.content
 
         if isinstance(content, list):
@@ -402,10 +487,9 @@ Return the JSON object.
             return {
                 "ticket_id": ticket.ticket_id,
                 "mode": "normal",
-                "summary": content
+                "summary": content,
             }
 
-        # Remove Markdown code fences if returned by the LLM
         if content.startswith("```"):
             content = content.replace("```json", "")
             content = content.replace("```", "")
@@ -418,7 +502,6 @@ Return the JSON object.
                 "AI response must be a JSON object."
             )
 
-        # Remove empty or placeholder values
         extracted_fields = {
             key: value
             for key, value in extracted_fields.items()
@@ -429,27 +512,38 @@ Return the JSON object.
                 "unknown",
                 "n/a",
                 "none",
-                "null"
+                "null",
             ]
         }
 
         return {
             "ticket_id": ticket.ticket_id,
             "mode": "fields",
-            "fields": extracted_fields
+            "fields": extracted_fields,
         }
 
     except Exception as exc:
         raise HTTPException(
             status_code=500,
-            detail=f"Ticket summarization failed: {str(exc)}"
+            detail=f"Ticket summarization failed: {str(exc)}",
         )
+
+
 @router.get("/{ticket_id}/similar")
 def get_similar_tickets(
     ticket_id: str,
+    chatbot_id: int,
     db: Session = Depends(get_db),
 ):
-    """Find similar tickets for the selected ticket."""
+    """Find similar tickets belonging to the same chatbot."""
+
+    ticket = get_scoped_ticket(db, ticket_id, chatbot_id)
+
+    if not ticket:
+        raise HTTPException(
+            status_code=404,
+            detail="Ticket not found.",
+        )
 
     result = find_similar_tickets(
         db=db,
