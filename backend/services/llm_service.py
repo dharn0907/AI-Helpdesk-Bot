@@ -20,6 +20,15 @@ llm = ChatGoogleGenerativeAI(
 
 )
 
+# Dedicated Gemini configuration for conversation understanding
+conversation_llm = ChatGoogleGenerativeAI(
+    model="gemini-3.5-flash-lite",
+    temperature=0.2,
+    max_tokens=1024,
+    request_timeout=30,
+    retries=1
+)
+
 def extract_response_text(content):
 
     """Extract text from Gemini response content."""
@@ -362,6 +371,10 @@ CLASSIFICATION CATEGORIES:
 
    The intention cannot be determined confidently.
 
+8. CANCEL_SUPPORT_REQUEST
+
+   The customer no longer wants the pending human-support request or ticket.
+
 IMPORTANT RULES:
 
 - Interpret the latest message using the conversation history.
@@ -399,6 +412,12 @@ ONGOING HUMAN-SUPPORT ESCALATION:
 - Do not infer a human-support request when no such request
 
   is pending and the customer has not explicitly asked for one.
+
+PENDING SUPPORT CANCELLATION:
+- When human support is pending, recognize natural-language withdrawal as CANCEL_SUPPORT_REQUEST.
+- This includes no longer needing an agent or wanting to stop the support request.
+- Do not classify cancellation as an email address or issue description.
+- Do not infer cancellation when no support request is pending.
 
 PRODUCT AND CORRECTION TRACKING:
 
@@ -444,6 +463,15 @@ PRODUCT AND CORRECTION TRACKING:
 
 - Use UNCERTAIN when the available information is insufficient.
 
+SAFETY ASSESSMENT:
+- Understand possible physical safety incidents from the meaning of the latest message and conversation history, not just keywords.
+- Recognize indirectly described incidents, including robbery, assault, threats, abduction, coercion, and dangerous accidents.
+- Set safety_concern to true only when there is credible evidence of a physical safety or security incident.
+- Ordinary payment disputes, refunds, failed transactions, and account problems alone are not physical safety incidents.
+- Do not require a safety incident to relate to the company's products or services.
+- Set safety_type to a short description when safety_concern is true; otherwise use an empty string.
+- Never invent incident details or claim that authorities have been contacted.
+
 Return ONLY one valid JSON object in this exact structure:
 
 {{
@@ -458,11 +486,15 @@ Return ONLY one valid JSON object in this exact structure:
 
     "needs_clarification": false,
 
-    "clarification_question": ""
+    "clarification_question": "",
+
+    "safety_concern": false,
+
+    "safety_type": ""
 
 }}
 
-The category must be one of the seven categories listed above.
+The category must be one of the eight categories listed above.
 
 CUSTOMER CONVERSATION HISTORY:
 
@@ -478,7 +510,7 @@ LATEST CUSTOMER MESSAGE:
 
 """
 
-    response = llm.invoke(prompt)
+    response = conversation_llm.invoke(prompt)
 
     response_text = extract_response_text(response.content)
 
@@ -497,6 +529,7 @@ LATEST CUSTOMER MESSAGE:
         "FOLLOW_UP_ISSUE",
 
         "HUMAN_SUPPORT_REQUEST",
+        "CANCEL_SUPPORT_REQUEST",
 
         "UNCERTAIN"
 
@@ -560,7 +593,11 @@ LATEST CUSTOMER MESSAGE:
 
             result.get("clarification_question", "")
 
-        )
+        ),
+
+        "safety_concern": result.get("safety_concern") is True,
+
+        "safety_type": str(result.get("safety_type", "")).strip()
 
     }
 

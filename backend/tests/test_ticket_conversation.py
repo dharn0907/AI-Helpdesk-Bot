@@ -1,6 +1,7 @@
-﻿
+
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
+from types import SimpleNamespace
 
 import main
 
@@ -9,6 +10,79 @@ class TicketConversationTests(unittest.TestCase):
 
     def setUp(self):
         self.session_id = "test-ticket-conversation"
+        self.bot_public_id = "test-chatbot-public-id"
+
+        # Mock an active chatbot and its owning company.
+        self.db = MagicMock()
+        chatbot = SimpleNamespace(
+            id=101,
+            public_id=self.bot_public_id,
+            status="active",
+            organization_id=202,
+        )
+        company = SimpleNamespace(
+            id=202,
+            name="Test Company",
+            is_active=True,
+        )
+
+        configuration = SimpleNamespace(
+            bot_name="Test Support Bot",
+            what_this_bot_helps_with="Account and login support",
+            about_business="Test business",
+            how_to_respond="Provide helpful support.",
+            when_to_handoff="Escalate unresolved issues.",
+            dos="Be helpful.",
+            donts="Do not invent information.",
+            advanced_instructions="",
+        )
+
+        chatbot_query = MagicMock()
+        chatbot_query.filter.return_value.first.return_value = chatbot
+
+        company_query = MagicMock()
+        company_query.filter.return_value.first.return_value = company
+
+        config_query = MagicMock()
+        config_query.filter.return_value.first.return_value = configuration
+
+        knowledge_query = MagicMock()
+        knowledge_query.filter.return_value.all.return_value = []
+
+        def fake_query(model):
+            model_name = model.__name__
+
+            if model_name == "Chatbot":
+                return chatbot_query
+            if model_name == "Company":
+                return company_query
+            if model_name == "BotConfiguration":
+                return config_query
+            if model_name == "KnowledgeBaseRecord":
+                return knowledge_query
+
+            raise AssertionError(
+                f"Unexpected database model in test: {model_name}"
+            )
+
+        self.db.query.side_effect = fake_query
+        self.db_patcher = patch("main.SessionLocal", return_value=self.db)
+        self.db_patcher.start()
+
+        # Keep conversation logging out of the real database.
+        self.logging_patcher = patch("main.save_conversation_exchange")
+        self.logging_patcher.start()
+
+        # Keep unit tests independent of live Gemini API latency.
+        self.gemini_patcher = patch(
+            "main.classify_conversation_turn",
+            return_value={
+                "category": "FOLLOW_UP_ISSUE",
+                "safety_concern": False,
+                "safety_type": "",
+            },
+        )
+        self.gemini_patcher.start()
         main.conversation_states.pop(self.session_id, None)
 
         main.conversation_states[self.session_id] = {
@@ -25,13 +99,25 @@ class TicketConversationTests(unittest.TestCase):
             },
         }
 
+        # Keep the old test key as an alias for existing assertions.
+        main.conversation_states[
+            f"{self.bot_public_id}:{self.session_id}"
+        ] = main.conversation_states[self.session_id]
+
     def tearDown(self):
         main.conversation_states.pop(self.session_id, None)
+        main.conversation_states.pop(
+            f"{self.bot_public_id}:{self.session_id}", None
+        )
+        self.gemini_patcher.stop()
+        self.logging_patcher.stop()
+        self.db_patcher.stop()
 
     def send_message(self, message):
         return main.chat({
             "message": message,
             "session_id": self.session_id,
+            "bot_public_id": self.bot_public_id,
         })
 
     @patch("main.interpret_ticket_message")
@@ -384,6 +470,30 @@ class TicketConversationTests(unittest.TestCase):
             main.conversation_states[self.session_id],
         )
 
+
+
+    def test_robbery_triggers_safety_guidance_before_ticket_creation(self):
+        safety_result = {
+            "category": "CUSTOMER_ISSUE",
+            "safety_concern": True,
+            "safety_type": "ROBBERY",
+        }
+
+        with patch("main.classify_conversation_turn", return_value=safety_result):
+            result = self.send_message(
+                "I withdrew 20000 rupees from the ATM yesterday. "
+                "Two men wearing black masks pulled the money and escaped on a bike."
+            )
+
+        self.assertFalse(result["ticket_created"])
+        self.assertEqual(
+            result["conversation_status"],
+            "urgent_safety_guidance",
+        )
+        self.assertEqual(
+            result["response_source"],
+            "semantic_safety_classification",
+        )
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

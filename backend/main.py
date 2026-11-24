@@ -1,15 +1,15 @@
-﻿"""Application entry point for the AI Helpdesk backend."""
+"""Application entry point for the AI Helpdesk backend."""
 
 import re
 import time
 
+from urllib import response
 import uuid
 import asyncio
 from datetime import datetime, timezone
 from fastapi import FastAPI, HTTPException
 from services.zep_memory_service import save_assistant_turn, start_user_turn
 from services.first_level_intent_service import classify_first_level_intent
-from services.business_intent_service import classify_business_intent
 from fastapi.middleware.cors import CORSMiddleware
 from routes.knowledge_base_routes import router as knowledge_base_router
 from routes.image import router as image_router
@@ -177,8 +177,7 @@ def generate_llm_response(
                     and (record.record_data or {}).get("Record")
                 )
             ]
-
-            if product_catalogue_records:
+            if product_catalogue_records and intent == "business_enquiry":
                 available_product_groups = sorted({
                     str(record.record_data.get("Group", "")).upper()
                     for record in product_catalogue_records
@@ -187,11 +186,18 @@ def generate_llm_response(
 
                 # Let Gemini understand the request and plan retrieval.
                 try:
+                    planner_start = time.perf_counter()
+
                     retrieval_plan = plan_knowledge_retrieval(
                         customer_message=customer_message,
                         available_product_groups=available_product_groups,
                         conversation_history=conversation_history
                     )
+                    print(
+                         f"GEMINI PRODUCT PLANNER TIME: "
+                         f"{time.perf_counter() - planner_start:.2f}s"
+                    )
+
                 except Exception as error:
                     print("PRODUCT RETRIEVAL PLANNER ERROR:", error)
                     retrieval_plan = {
@@ -398,14 +404,31 @@ def generate_llm_response(
             if combined_context else knowledge_context
         )
 
-    return _generate_llm_response(
+    generation_start = time.perf_counter()
+
+    response = _generate_llm_response(
         customer_message=customer_message,
         intent=intent,
         context=combined_context,
         conversation_history=conversation_history,
         company_config=company_config,
-        
     )
+
+    print(
+        f"GEMINI FINAL RESPONSE TIME: "
+        f"{time.perf_counter() - generation_start:.2f}s"
+    )
+
+    print(
+        f"TOTAL RESPONSE WRAPPER TIME: "
+        f"{time.perf_counter() - start_time:.2f}s"
+    )
+
+    return response
+    
+
+
+
 app = FastAPI(title="AI Helpdesk Bot")
 async def historical_solution_timeout_checker():
     print("Historical solution timeout checker started.")
@@ -570,6 +593,18 @@ def is_ticket_cancellation(message):
         "no need to create a ticket",
         "no need to raise a ticket",
         "leave it",
+        "do not need human support",
+        "do not want human support",
+        "i do not need human support",
+        "i do not want human support",
+        "no human support needed",
+        "no ticket generation",
+        "ticket generation is not needed",
+        "ticket generation is not required",
+        "no ticket is needed",
+        "no ticket needed",
+        "no ticket required",
+        "i do not need a support request",
     )
 
     return any(
@@ -577,6 +612,47 @@ def is_ticket_cancellation(message):
         for phrase in cancellation_phrases
     )
 
+
+def is_urgent_safety_message(message):
+    """Detect clear physical danger or robbery/theft situations."""
+    normalized = re.sub(r"[^a-z0-9 ]+", " ", message.lower())
+    normalized = " ".join(normalized.split())
+
+    direct_danger_terms = (
+        "robbed", "robbery", "mugged", "mugging",
+        "snatched", "snatching", "attacked", "assaulted",
+        "kidnapped", "threatened",
+    )
+
+    financial_context_terms = (
+        "atm", "cash", "money", "withdrawal",
+        "wallet", "purse", "bank", "rupees",
+    )
+
+    has_direct_danger = any(
+        term in normalized for term in direct_danger_terms
+    )
+    has_financial_context = any(
+        term in normalized for term in financial_context_terms
+    )
+
+    describes_cash_robbery = (
+        has_financial_context
+        and any(term in normalized for term in (
+            "pulled the money",
+            "took the money",
+            "grabbed the money",
+            "escaped with",
+            "ran away with",
+            "stole the cash",
+            "stole my money",
+        ))
+    )
+
+    return (
+        (has_direct_danger and has_financial_context)
+        or describes_cash_robbery
+    )
 
 def valid_email(email):
     """Validate customer email format."""
@@ -1224,6 +1300,8 @@ def chat(data: dict):
     zep_memory_context = ""
 
     if customer_id:
+        zep_start_time = time.perf_counter()
+
         try:
             thread_uuid, zep_memory_context = start_user_turn(
                 company_id="active_company",
@@ -1238,6 +1316,12 @@ def chat(data: dict):
         except Exception as exc:
             print(f"ZEP: Memory integration failed: {exc}")
 
+        finally:
+            print(
+                f"ZEP TOTAL TIME: "
+                f"{time.perf_counter() - zep_start_time:.2f}s"
+            )
+
     if zep_memory_context:
         history.append({
             "role": "system",
@@ -1250,10 +1334,81 @@ def chat(data: dict):
         })
 
 
-    # Handle clear cancellation requests from any active ticket state.
-    if state.get("pending_ticket") and is_ticket_cancellation(user_message):
+    # Understand the message semantically before ticket and domain routing.
+    conversation_context = {
+        "last_customer_complaint": state.get("last_customer_complaint", ""),
+        "issue_messages": state.get("issue_messages", []),
+        "human_escalation_count": state.get("human_escalation_count", 0),
+        "human_support_issue_pending": bool(state.get("human_support_issue_pending")),
+        "pending_ticket_exists": bool(state.get("pending_ticket")),
+        "pending_ticket_step": (state.get("pending_ticket") or {}).get("step", ""),
+    }
+
+    turn_result = None
+    try:
+        gemini_start = time.perf_counter()
+        turn_result = classify_conversation_turn(
+            customer_message=user_message,
+            conversation_history=history,
+            conversation_state=conversation_context,
+        )
+        print(
+            "GEMINI CONVERSATION UNDERSTANDING TIME:",
+            f"{time.perf_counter() - gemini_start:.2f}s",
+        )
+    except Exception as exc:
+        # Keep normal chat available if the early semantic call fails.
+        print(f"Early conversation understanding failed: {exc}")
+
+    semantic_category = str(
+        (turn_result or {}).get("category", "UNCERTAIN")
+    ).upper()
+
+    semantic_human_request = semantic_category == "HUMAN_SUPPORT_REQUEST"
+    semantic_cancel_request = semantic_category == "CANCEL_SUPPORT_REQUEST"
+
+    if turn_result and turn_result.get("safety_concern") is True:
+        print("SEMANTIC SAFETY TYPE:", turn_result.get("safety_type", ""))
+
+        reply = (
+            "I'm sorry you're dealing with this. Your safety comes first. "
+            "If you are in immediate danger, move to a safe place and call "
+            "your local emergency number. If you are in India, call 112.\n\n"
+            "Please report the incident to the local police as appropriate. "
+            "Do not confront anyone who may have harmed or threatened you. "
+            "Keep relevant evidence and details that may help authorities.\n\n"
+            "If a bank account, card, ATM withdrawal, or unauthorized "
+            "transaction is involved, contact your bank immediately. In India, "
+            "1930 is for unauthorized digital financial transactions, not "
+            "physical theft alone.\n\n"
+            "I cannot contact the police or your bank on your behalf."
+        )
+
+        return _save_and_return(
+            state,
+            history,
+            user_message,
+            reply,
+            ticket_created=False,
+            conversation_status="urgent_safety_guidance",
+            response_source="semantic_safety_classification",
+        )
+
+    # Preserve the existing pending-ticket cancellation behaviour.
+    support_request_pending = bool(
+        state.get("pending_ticket")
+        or state.get("human_support_issue_pending")
+        or state.get("human_escalation_count")
+    )
+
+    if support_request_pending and (
+        semantic_cancel_request or is_ticket_cancellation(user_message)
+    ):
         state.pop("pending_ticket", None)
         state.pop("duplicate_confirmation", None)
+        state.pop("human_escalation_count", None)
+        state.pop("human_escalation_triggered", None)
+        state.pop("human_support_issue_pending", None)
 
         reply = (
             "No problem. I've cancelled your pending support request. "
@@ -1269,7 +1424,6 @@ def chat(data: dict):
             conversation_status="ticket_cancelled",
         )
 
-    # ------------------------------------------------
     # STEP 1: HANDLE DUPLICATE CONFIRMATION
     # ------------------------------------------------
 
@@ -2282,7 +2436,24 @@ def chat(data: dict):
 
         if current_step == "human_support_issue_details":
 
-            if wants_human_support(user_message):
+            if semantic_human_request:
+                escalation_count = int(state.get("human_escalation_count") or 0) + 1
+                state["human_escalation_count"] = escalation_count
+
+                if escalation_count < 3:
+                    reply = (
+                        "I understand that you want human support. "
+                        "Please describe the issue briefly if you can. "
+                        "I'll ask for your email when you're ready to proceed."
+                    )
+                    return _save_and_return(
+                        state, history, user_message, reply,
+                        ticket_created=False,
+                        human_escalation_count=escalation_count,
+                        conversation_status="collecting_support_issue",
+                    )
+
+                # On the third request, skip issue collection and collect email.
                 # The customer is repeatedly insisting on a human. Do not trap them
                 # in the issue-details prompt; proceed with a ticket using a clear
                 # fallback note and collect the email instead.
@@ -2315,6 +2486,19 @@ def chat(data: dict):
                     ticket_created=False,
                     awaiting_customer_email=True,
                     conversation_status="collecting_customer_email",
+                )
+
+            if semantic_category not in {"CUSTOMER_ISSUE", "FOLLOW_UP_ISSUE"}:
+                reply = (
+                    "I understand that you want human support. "
+                    "You can repeat your request to proceed without describing "
+                    "the issue, or describe the problem if you prefer."
+                )
+                return _save_and_return(
+                    state, history, user_message, reply,
+                    ticket_created=False,
+                    human_escalation_count=state.get("human_escalation_count", 0),
+                    conversation_status="collecting_support_issue",
                 )
 
             complaint = user_message.strip()
@@ -2364,6 +2548,23 @@ def chat(data: dict):
         # --------------------------------------------
 
         if current_step == "customer_email":
+            if semantic_human_request:
+                reply = (
+                    "I understand that you want to speak with a human. "
+                    "Your support request is ready for human follow-up. "
+                    "Please provide your email address so the support team "
+                    "can contact you."
+                )
+                return _save_and_return(
+                    state,
+                    history,
+                    user_message,
+                    reply,
+                    ticket_created=False,
+                    awaiting_customer_email=True,
+                    conversation_status="collecting_customer_email",
+                )
+
             email = user_message.strip()
 
             if not valid_email(email):
@@ -2429,17 +2630,20 @@ def chat(data: dict):
         "human_escalation_count": state.get("human_escalation_count", 0),
     }
 
-    # Gemini is used when BERT is uncertain.
-    # It is also used for support messages to identify follow-ups,
-    # explicit human requests, and the actual conversation context.
+    # Reuse the early Gemini result whenever it is available.
     needs_gemini_understanding = (
         first_uncertain
         or first_intent == "CUSTOMER_SUPPORT"
         or state.get("human_escalation_count", 0) > 0
-        
     )
 
-    if needs_gemini_understanding:
+    if turn_result is not None:
+        category = str(
+            turn_result.get("category", "UNCERTAIN")
+        ).upper()
+
+    elif needs_gemini_understanding:
+        # Retry the existing support/uncertain path if the early call failed.
         try:
             gemini_start = time.perf_counter()
             turn_result = classify_conversation_turn(
@@ -2447,7 +2651,13 @@ def chat(data: dict):
                 conversation_history=history,
                 conversation_state=conversation_context,
             )
-            print(f"GEMINI CONVERSATION UNDERSTANDING TIME: {time.perf_counter() - gemini_start:.2f}s")
+            print(
+                "GEMINI CONVERSATION UNDERSTANDING TIME:",
+                f"{time.perf_counter() - gemini_start:.2f}s",
+            )
+            category = str(
+                turn_result.get("category", "UNCERTAIN")
+            ).upper()
         except Exception as exc:
             print(f"Conversation understanding failed: {exc}")
             raise HTTPException(
@@ -2455,15 +2665,7 @@ def chat(data: dict):
                 detail="I'm having trouble understanding your message right now. Please try again.",
             )
 
-        category = str(
-            turn_result.get("category", "UNCERTAIN")
-        ).upper()
-
-        # Do not let an uncertain BERT prediction bypass Gemini's result.
-        print("GEMINI CONVERSATION CATEGORY:", category)
-
     else:
-        # High-confidence business and general messages are routed directly.
         category = {
             "BUSINESS_ENQUIRY": "PRODUCT_ENQUIRY",
             "GENERAL_QUERY": "GENERAL_QUESTION",
@@ -2479,13 +2681,28 @@ def chat(data: dict):
 
     explicit_human_request = (
         category == "HUMAN_SUPPORT_REQUEST"
-        or wants_human_support(user_message)
     )
 
     if (
         state.get("human_support_issue_pending")
         and not explicit_human_request
     ):
+        if category not in {"CUSTOMER_ISSUE", "FOLLOW_UP_ISSUE"}:
+            reply = (
+                "I understand that you want human support. "
+                "Please describe the problem, or repeat your request "
+                "if you want to continue without describing it."
+            )
+            return _save_and_return(
+                state,
+                history,
+                user_message,
+                reply,
+                ticket_created=False,
+                human_escalation_count=state.get("human_escalation_count", 0),
+                conversation_status="collecting_support_issue",
+            )
+
         complaint = user_message.strip()
         state["last_customer_complaint"] = complaint
         issue_messages = state.get("issue_messages", [])
@@ -2513,8 +2730,8 @@ def chat(data: dict):
     # EARLY HUMAN-SUPPORT ESCALATION (3 REQUESTS)
     # ------------------------------------------------
 
-    if explicit_human_request and not state.get("human_escalation_triggered"):
-        escalation_count = state.get("human_escalation_count", 0) + 1
+    if explicit_human_request:
+        escalation_count = int(state.get("human_escalation_count") or 0) + 1
         state["human_escalation_count"] = escalation_count
 
         existing_pending = state.get("pending_ticket") or {}
@@ -2572,7 +2789,14 @@ def chat(data: dict):
                 ),
             )
 
-        # Request 3: start ticket collection, using the issue already given.
+        # On the third request, proceed even if the customer has not
+        # provided an issue description.
+        issue_was_provided = bool(complaint)
+        if not issue_was_provided:
+            complaint = (
+                "Customer requested human support; issue description not provided."
+            )
+
         pending_ticket = {
             **existing_pending,
             "original_complaint": complaint,
@@ -2583,7 +2807,7 @@ def chat(data: dict):
             "intent": existing_pending.get("intent", "human_support_request"),
             "intervention": existing_pending.get("intervention"),
             "intervention_confidence": existing_pending.get("intervention_confidence", 0.0),
-            "step": "human_support_issue_details" if not complaint else "customer_email",
+            "step": "customer_email",
         }
         state["human_escalation_triggered"] = True
         state["pending_ticket"] = pending_ticket
@@ -2610,10 +2834,16 @@ def chat(data: dict):
                 state, history, user_message, session_id, pending_ticket
             )
 
-        reply = (
-            "I've included the issue details in your support request. Please provide "
-            "your email address so our support team can contact you."
-        )
+        if issue_was_provided:
+            reply = (
+                "I've included your issue in the support request. Please provide "
+                "your email address so our support team can contact you."
+            )
+        else:
+            reply = (
+                "You can proceed without describing the issue. Please provide "
+                "your email address so our human support team can contact you."
+            )
         return _save_and_return(
             state,
             history,
@@ -2643,26 +2873,16 @@ def chat(data: dict):
         business_context = ""
 
         if category == "PRODUCT_ENQUIRY":
-            try:
-                business_result = classify_business_intent(user_message)
-                business_intent = business_result["intent"]
-                business_confidence = business_result["confidence"]
-
-                print("BUSINESS INTENT:", business_intent)
-                print("BUSINESS INTENT CONFIDENCE:", business_confidence)
-
-                business_context = (
-                    f"Detected business enquiry category: {business_intent}. "
-                    "Use this category to understand the customer's specific "
-                    "business enquiry and answer accordingly. "
-                    "Do not invent company-specific information."
-                )
-            except Exception as exc:
-                print(f"Business intent classification failed: {exc}")
-                business_context = (
-                    "The message is a business enquiry, but its specific "
-                    "category could not be determined."
-                )
+            business_context = (
+                "The customer has a business-related enquiry. "
+                "Understand the actual subject of the question using the "
+                "active company's configuration and knowledge base. "
+                "The enquiry may concern products, services, pricing, "
+                "availability, features, bookings, demonstrations, or "
+                "any other business-specific topic. "
+                "Do not assume a particular industry or business domain. "
+                "Never invent company-specific information."
+            )
 
         try:
             reply = generate_llm_response(
