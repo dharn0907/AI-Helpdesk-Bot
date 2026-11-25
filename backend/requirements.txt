@@ -1,4 +1,0 @@
-# Add backend Python dependencies here.
-SQLAlchemy
-psycopg[binary]
-huggingface_hub==0.25.2
