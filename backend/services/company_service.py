@@ -1,4 +1,4 @@
-﻿import re
+import re
 
 from sqlalchemy.exc import IntegrityError
 
@@ -17,7 +17,7 @@ CONFIGURATION_FIELDS = {
 }
 
 
-def create_company(db, name, slug=None):
+def create_company(db, name, slug=None, is_active=True):
     """Register a company and create its default bot configuration."""
 
     name = str(name or "").strip()
@@ -36,6 +36,7 @@ def create_company(db, name, slug=None):
     company = Company(
         name=name,
         slug=slug,
+        is_active=is_active,
     )
 
     try:

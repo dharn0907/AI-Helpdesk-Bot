@@ -3,10 +3,11 @@ import uuid
 from pathlib import Path
 
 import pandas as pd
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Header, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
 from database.database import get_db
+from services.workspace_auth import get_workspace_company
 from database.models import (
     Company,
     KnowledgeBaseFile,
@@ -22,19 +23,6 @@ router = APIRouter(
 UPLOAD_DIR = Path(__file__).resolve().parent.parent / "uploads" / "company_knowledge"
 MAX_FILE_SIZE = 10 * 1024 * 1024
 ALLOWED_EXTENSIONS = {".csv", ".xlsx"}
-
-
-def get_active_company(db):
-    company = (
-        db.query(Company)
-        .filter(Company.is_active.is_(True))
-        .first()
-    )
-
-    if not company:
-        raise HTTPException(status_code=404, detail="No active company found.")
-
-    return company
 
 
 def read_spreadsheet(file_path, extension):
@@ -109,6 +97,8 @@ def read_spreadsheet(file_path, extension):
 async def upload_knowledge_file(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
+    authorization: str = Header(default=None),
+    x_company_id: int = Header(default=None, alias="X-Company-ID"),
 ):
     original_name = Path(file.filename or "").name
     extension = Path(original_name).suffix.lower()
@@ -139,7 +129,7 @@ async def upload_knowledge_file(
 
     try:
         records = read_spreadsheet(file_path, extension)
-        company = get_active_company(db)
+        company = get_workspace_company(authorization, x_company_id, db)
 
         knowledge_file = KnowledgeBaseFile(
             company_id=company.id,
@@ -198,8 +188,10 @@ async def upload_knowledge_file(
 @router.get("/files")
 def list_knowledge_files(
     db: Session = Depends(get_db),
+    authorization: str = Header(default=None),
+    x_company_id: int = Header(default=None, alias="X-Company-ID"),
 ):
-    company = get_active_company(db)
+    company = get_workspace_company(authorization, x_company_id, db)
 
     files = (
         db.query(KnowledgeBaseFile)
@@ -230,8 +222,10 @@ def list_knowledge_files(
 def delete_knowledge_file(
     file_id: int,
     db: Session = Depends(get_db),
+    authorization: str = Header(default=None),
+    x_company_id: int = Header(default=None, alias="X-Company-ID"),
 ):
-    company = get_active_company(db)
+    company = get_workspace_company(authorization, x_company_id, db)
 
     item = (
         db.query(KnowledgeBaseFile)

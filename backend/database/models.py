@@ -1,4 +1,4 @@
-﻿import uuid
+import uuid
 
 from sqlalchemy import (
     Column,
@@ -23,6 +23,8 @@ class Company(Base):
     id = Column(Integer, primary_key=True, index=True)
 
     name = Column(String(255), nullable=False)
+    email = Column(String(320), unique=True, nullable=True, index=True)
+    password_hash = Column(String(255), nullable=True)
 
     slug = Column(String(255), unique=True, nullable=False, index=True)
 
@@ -56,6 +58,23 @@ class Company(Base):
         server_default=func.now(),
         onupdate=func.now(),
     )
+
+
+class CompanyEmailVerification(Base):
+    __tablename__ = "company_email_verifications"
+
+    id = Column(Integer, primary_key=True, index=True)
+    company_id = Column(
+        Integer,
+        ForeignKey("companies.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    email = Column(String(320), nullable=False)
+    token_hash = Column(String(64), unique=True, nullable=False, index=True)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    verified_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
 class BotConfiguration(Base):
@@ -442,7 +461,7 @@ class OrganizationMember(Base):
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
     organization_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
-    auth_user_id = Column(UUID(as_uuid=False), ForeignKey("auth.users.id"), nullable=True)
+    auth_user_id = Column(UUID(as_uuid=False), nullable=True)
     email = Column(String, nullable=False)
     full_name = Column(String, nullable=True)
     role = Column(String, nullable=False, server_default="support_agent")

@@ -1,33 +1,50 @@
-
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Headset, Mail, Lock, ArrowRight } from "lucide-react";
+import { Headset, Mail, ArrowRight } from "lucide-react";
+
+const API_BASE_URL = "http://127.0.0.1:8000";
 
 function Login() {
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
-  const handleLogin = (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
+    setError("");
+    setLoading(true);
 
-    // Temporary demo navigation.
-    // Real authentication will be connected later.
-    navigate("/");
+    try {
+      const response = await fetch(`${API_BASE_URL}/tickets/agents/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim().toLowerCase() }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.detail || "This email is not registered as an approved agent.");
+      }
+
+      sessionStorage.setItem("agent", JSON.stringify(result));
+      navigate("/", { replace: true });
+    } catch (err) {
+      setError(err.message || "Unable to log in. Check your backend connection.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
     <div className="login-page">
       <div className="login-card">
-        <div className="login-logo">
-          <Headset size={30} />
-        </div>
-
+        <div className="login-logo"><Headset size={30} /></div>
         <h1>Welcome Back</h1>
         <p>Sign in to your HelpDesk AI workspace</p>
-
         <form onSubmit={handleLogin}>
-          <label>Email Address</label>
+          <label>Registered Email Address</label>
           <div className="login-input">
             <Mail size={18} />
             <input
@@ -38,27 +55,12 @@ function Login() {
               required
             />
           </div>
-
-          <label>Password</label>
-          <div className="login-input">
-            <Lock size={18} />
-            <input
-              type="password"
-              placeholder="Enter your password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-            />
-          </div>
-
-          <button type="submit" className="login-button">
-            Sign In <ArrowRight size={18} />
+          {error && <p style={{ color: "#dc2626" }}>{error}</p>}
+          <button type="submit" className="login-button" disabled={loading}>
+            {loading ? "Verifying..." : "Sign In"} <ArrowRight size={18} />
           </button>
         </form>
-
-        <span className="login-note">
-          Human Support Agent Portal
-        </span>
+        <span className="login-note">Human Support Agent Portal</span>
       </div>
     </div>
   );

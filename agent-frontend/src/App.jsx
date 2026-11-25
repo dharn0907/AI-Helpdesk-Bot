@@ -20,13 +20,17 @@ import Header from "./components/Header";
 import "./index.css";
 
 function AgentLayout() {
+  const agent = sessionStorage.getItem("agent");
+
+  if (!agent) {
+    return <Navigate to="/login" replace />;
+  }
+
   return (
     <div className="app-layout">
       <Sidebar />
-
       <div className="main-section">
         <Header />
-
         <main className="page-content">
           <Outlet />
         </main>
@@ -43,21 +47,11 @@ function App() {
 
         <Route path="/" element={<AgentLayout />}>
           <Route index element={<Dashboard />} />
-
           <Route path="tickets" element={<TicketList />} />
           <Route path="tickets/:ticketId" element={<TicketDetails />} />
-
           <Route path="conversations" element={<Conversations />} />
-
-          <Route
-            path="historical-solutions"
-            element={<HistoricalSolutions />}
-          />
-
-          <Route
-            path="historical-solution-attempts"
-            element={<HistoricalSolutionAttempts />}
-          />
+          <Route path="historical-solutions" element={<HistoricalSolutions />} />
+          <Route path="historical-solution-attempts" element={<HistoricalSolutionAttempts />} />
         </Route>
 
         <Route path="*" element={<Navigate to="/" replace />} />

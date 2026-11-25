@@ -3,10 +3,14 @@
 
 import uuid
 import json
-from datetime import datetime, timezone
+import hashlib
+import hmac
+import secrets
+from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 
 from database.database import Base, engine, get_db
 from database.models import (
@@ -14,9 +18,12 @@ from database.models import (
     Chatbot,
     Ticket,
     TicketResolutionReview,
+    OrganizationMember,
+    TicketAssignment,
 )
+from services.workspace_auth import get_workspace_company
 from services.similar_ticket_service import find_similar_tickets
-from services.email_service import send_ticket_reply
+from services.email_service import send_ticket_reply, send_company_otp
 from services.llm_service import llm
 
 
@@ -130,18 +137,182 @@ def create_ticket(data: dict, db: Session = Depends(get_db)):
 def get_all_tickets(
     chatbot_id: int,
     db: Session = Depends(get_db),
+    authorization: str = Header(default=None),
+    x_company_id: int = Header(default=None, alias="X-Company-ID")
 ):
 
-    get_active_chatbot(db, chatbot_id)
+    company = get_workspace_company(authorization, x_company_id, db)
+    chatbot, _ = get_active_chatbot(db, chatbot_id)
+    if chatbot.organization_id != company['id']:
+        raise HTTPException(403, 'Chatbot does not belong to this company.')
 
     tickets = (
         db.query(Ticket)
-        .filter(Ticket.chatbot_id == chatbot_id)
+        .filter(
+            Ticket.chatbot_id == chatbot_id,
+            Ticket.company_id == company["id"],
+        )
         .order_by(Ticket.created_at.desc())
         .all()
     )
 
-    return tickets
+    result = []
+    for ticket in tickets:
+        item = {
+            column.name: getattr(ticket, column.name)
+            for column in Ticket.__table__.columns
+        }
+
+        assignment = (
+            db.query(TicketAssignment, OrganizationMember)
+            .outerjoin(
+                OrganizationMember,
+                TicketAssignment.assigned_member_id == OrganizationMember.id
+            )
+            .filter(
+                TicketAssignment.ticket_id == ticket.id,
+                TicketAssignment.organization_id == company["id"],
+            )
+            .order_by(TicketAssignment.assigned_at.desc())
+            .first()
+        )
+
+        member = assignment[1] if assignment else None
+        item["assigned_agent"] = (
+            {
+                "id": member.id,
+                "name": member.full_name,
+                "email": member.email,
+            }
+            if member else None
+        )
+        result.append(item)
+
+    return result
+
+
+
+@router.post("/agents")
+def create_support_agent(
+    data: dict,
+    db: Session = Depends(get_db),
+    authorization: str = Header(default=None),
+    x_company_id: int = Header(default=None, alias="X-Company-ID"),
+):
+    company = get_workspace_company(authorization, x_company_id, db)
+    email = str(data.get("email") or "").strip().lower()
+    name = str(data.get("name") or "").strip()
+
+    if not email or "@" not in email:
+        raise HTTPException(400, "Enter a valid agent email address.")
+
+    member = db.query(OrganizationMember).filter(
+        OrganizationMember.organization_id == company["id"],
+        OrganizationMember.email == email,
+        OrganizationMember.role == "support_agent",
+    ).first()
+
+    if member:
+        raise HTTPException(409, "This agent email is already registered.")
+
+    member = OrganizationMember(
+        organization_id=company["id"],
+        email=email,
+        full_name=name or None,
+        role="support_agent",
+        status="approved",
+    )
+    db.add(member)
+    db.commit()
+    db.refresh(member)
+
+    return {"message": "Agent registered successfully.", "member_id": member.id, "email": email}
+
+
+@router.post("/agents/login")
+def support_agent_login(data: dict, db: Session = Depends(get_db)):
+    email = str(data.get("email") or "").strip().lower()
+    if not email or "@" not in email:
+        raise HTTPException(400, "Enter a valid registered email.")
+
+    member = db.query(OrganizationMember).filter(
+        OrganizationMember.email == email,
+        OrganizationMember.role == "support_agent",
+        OrganizationMember.status == "approved",
+    ).first()
+
+    if not member:
+        raise HTTPException(401, "This email is not registered as a support agent.")
+
+    return {
+        "message": "Agent email recognized.",
+        "member_id": member.id,
+        "company_id": member.organization_id,
+        "name": member.full_name,
+        "email": member.email,
+    }
+
+
+
+@router.post("/agents/tickets")
+def get_agent_tickets(data: dict, db: Session = Depends(get_db)):
+    email = str(data.get("email") or "").strip().lower()
+
+    member = db.query(OrganizationMember).filter(
+        OrganizationMember.email == email,
+        OrganizationMember.role == "support_agent",
+        OrganizationMember.status == "approved",
+    ).first()
+
+    if not member:
+        raise HTTPException(401, "Agent is not registered.")
+
+    tickets = (
+        db.query(Ticket)
+        .filter(Ticket.company_id == member.organization_id)
+        .order_by(Ticket.created_at.desc())
+        .all()
+    )
+
+    return [
+        {column.name: getattr(ticket, column.name)
+         for column in Ticket.__table__.columns}
+        for ticket in tickets
+    ]
+
+
+@router.get("/agents")
+def get_company_agents(
+    db: Session = Depends(get_db),
+    authorization: str = Header(default=None),
+    x_company_id: int = Header(default=None, alias="X-Company-ID"),
+):
+    company = get_workspace_company(authorization, x_company_id, db)
+
+    members = (
+        db.query(OrganizationMember)
+        .filter(
+            OrganizationMember.organization_id == company["id"],
+            OrganizationMember.role == "support_agent",
+        )
+        .order_by(OrganizationMember.created_at.desc())
+        .all()
+    )
+
+    return [
+        {
+            "id": member.id,
+            "name": member.full_name,
+            "email": member.email,
+            "role": member.role,
+            "status": member.status,
+            "email_verified": member.email_verified_at is not None,
+            "email_verified_at": member.email_verified_at,
+            "approved": member.approved_at is not None,
+            "approved_at": member.approved_at,
+        }
+        for member in members
+    ]
 
 
 @router.get("/{ticket_id}")
@@ -149,9 +320,15 @@ def get_ticket(
     ticket_id: str,
     chatbot_id: int,
     db: Session = Depends(get_db),
+    authorization: str = Header(default=None),
+    x_company_id: int = Header(default=None, alias="X-Company-ID")
 ):
 
+    company = get_workspace_company(authorization, x_company_id, db)
     ticket = get_scoped_ticket(db, ticket_id, chatbot_id)
+
+    if ticket and ticket.company_id != company['id']:
+        raise HTTPException(404, 'Ticket not found.')
 
     if not ticket:
         raise HTTPException(
@@ -168,9 +345,15 @@ def update_ticket(
     data: dict,
     chatbot_id: int,
     db: Session = Depends(get_db),
+    authorization: str = Header(default=None),
+    x_company_id: int = Header(default=None, alias="X-Company-ID")
 ):
 
+    company = get_workspace_company(authorization, x_company_id, db)
     ticket = get_scoped_ticket(db, ticket_id, chatbot_id)
+
+    if ticket and ticket.company_id != company['id']:
+        raise HTTPException(404, 'Ticket not found.')
 
     if not ticket:
         raise HTTPException(
@@ -240,9 +423,15 @@ def review_ticket_resolution(
     data: dict,
     chatbot_id: int,
     db: Session = Depends(get_db),
+    authorization: str = Header(default=None),
+    x_company_id: int = Header(default=None, alias='X-Company-ID')
 ):
 
+    company = get_workspace_company(authorization, x_company_id, db)
     ticket = get_scoped_ticket(db, ticket_id, chatbot_id)
+
+    if ticket and ticket.company_id != company['id']:
+        raise HTTPException(404, 'Ticket not found.')
 
     if not ticket:
         raise HTTPException(
@@ -336,9 +525,15 @@ def get_ticket_resolution_review(
     ticket_id: str,
     chatbot_id: int,
     db: Session = Depends(get_db),
+    authorization: str = Header(default=None),
+    x_company_id: int = Header(default=None, alias='X-Company-ID')
 ):
 
+    company = get_workspace_company(authorization, x_company_id, db)
     ticket = get_scoped_ticket(db, ticket_id, chatbot_id)
+
+    if ticket and ticket.company_id != company['id']:
+        raise HTTPException(404, 'Ticket not found.')
 
     if not ticket:
         raise HTTPException(
@@ -376,9 +571,15 @@ def summarize_ticket(
     data: dict,
     chatbot_id: int,
     db: Session = Depends(get_db),
+    authorization: str = Header(default=None),
+    x_company_id: int = Header(default=None, alias='X-Company-ID')
 ):
 
+    company = get_workspace_company(authorization, x_company_id, db)
     ticket = get_scoped_ticket(db, ticket_id, chatbot_id)
+
+    if ticket and ticket.company_id != company['id']:
+        raise HTTPException(404, 'Ticket not found.')
 
     if not ticket:
         raise HTTPException(
@@ -534,10 +735,16 @@ def get_similar_tickets(
     ticket_id: str,
     chatbot_id: int,
     db: Session = Depends(get_db),
+    authorization: str = Header(default=None),
+    x_company_id: int = Header(default=None, alias='X-Company-ID')
 ):
     """Find similar tickets belonging to the same chatbot."""
 
+    company = get_workspace_company(authorization, x_company_id, db)
     ticket = get_scoped_ticket(db, ticket_id, chatbot_id)
+
+    if ticket and ticket.company_id != company['id']:
+        raise HTTPException(404, 'Ticket not found.')
 
     if not ticket:
         raise HTTPException(

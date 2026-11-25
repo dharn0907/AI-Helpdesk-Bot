@@ -25,10 +25,11 @@ const fields = [
   ["advanced_instructions", "Advanced instructions"]
 ];
 
-export default function AdminDashboard({ onBack }) {
+export default function AdminDashboard({ onBack, session, chatbot }) {
   const [companyId, setCompanyId] = useState(null);
   const [companyName, setCompanyName] = useState("");
   const [newCompanyName, setNewCompanyName] = useState("");
+  const [newCompanyEmail, setNewCompanyEmail] = useState("");
   const [config, setConfig] = useState(emptyConfig);
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -36,9 +37,26 @@ export default function AdminDashboard({ onBack }) {
   const [knowledgeFiles, setKnowledgeFiles] = useState([]);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [conversations, setConversations] = useState([]);
+  const [tickets, setTickets] = useState([]);
+  const [agents, setAgents] = useState([]);
+  const [agentName, setAgentName] = useState("");
+  const [agentEmail, setAgentEmail] = useState("");
+  const [agentOtp, setAgentOtp] = useState("");
+  const [pendingAgentId, setPendingAgentId] = useState(null);
+  const [agentMessage, setAgentMessage] = useState("");
+  const [agentError, setAgentError] = useState("");
+  const [selectedConversation, setSelectedConversation] = useState(null);
+  const [dashboardLoading, setDashboardLoading] = useState(false);
+  const [detailsLoading, setDetailsLoading] = useState(false);
+  const [dashboardError, setDashboardError] = useState("");
 
-  const headers = () => ({
-    "Content-Type": "application/json"
+
+  const headers = (extra = {}) => ({
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${session.token}`,
+    "X-Company-ID": String(session.company.id),
+    ...extra
   });
 
   const readResponse = async (response) => {
@@ -100,14 +118,104 @@ export default function AdminDashboard({ onBack }) {
   };
 
   useEffect(() => {
+    setCompanyId(session.company.id);
+    setCompanyName(session.company.name);
     connect();
-  }, []);
+  }, [session.token, session.company.id]);
+
+
+  const loadBotData = async () => {
+    if (!chatbot?.id) return;
+    setDashboardLoading(true);
+    setDashboardError("");
+    try {
+      const [conversationResponse, ticketResponse, agentResponse] = await Promise.all([
+        fetch(`${API}/conversations/?chatbot_id=${chatbot.id}`, {
+          headers: headers()
+        }),
+        fetch(`${API}/tickets/?chatbot_id=${chatbot.id}`, {
+          headers: headers()
+        }),
+        fetch(`${API}/tickets/agents`, {
+          headers: headers()
+        })
+      ]);
+
+      const [conversationData, ticketData, agentData] = await Promise.all([
+        readResponse(conversationResponse),
+        readResponse(ticketResponse),
+        readResponse(agentResponse)
+      ]);
+
+      setConversations(Array.isArray(conversationData) ? conversationData : []);
+      setTickets(Array.isArray(ticketData) ? ticketData : []);
+      setAgents(Array.isArray(agentData) ? agentData : []);
+    } catch (err) {
+      setDashboardError(err.message || "Could not load chatbot activity.");
+    } finally {
+      setDashboardLoading(false);
+    }
+  };
+
+  const addSupportAgent = async (e) => {
+    e.preventDefault();
+    setAgentError("");
+    setAgentMessage("");
+
+    try {
+      const response = await fetch(`${API}/tickets/agents`, {
+        method: "POST",
+        headers: headers(),
+        body: JSON.stringify({
+          name: agentName.trim(),
+          email: agentEmail.trim().toLowerCase()
+        })
+      });
+
+      const data = await readResponse(response);
+
+      setAgentMessage("Agent registered and approved successfully.");
+      setAgentName("");
+      setAgentEmail("");
+      setPendingAgentId(null);
+      setAgentOtp("");
+      await loadBotData();
+    } catch (err) {
+      setAgentError(err.message);
+    }
+  };
+
+  const openConversation = async (conversation) => {
+    setSelectedConversation(null);
+    setDetailsLoading(true);
+    setDashboardError("");
+    try {
+      const response = await fetch(
+        `${API}/conversations/${conversation.id}?chatbot_id=${chatbot.id}`,
+        { headers: headers() }
+      );
+      const data = await readResponse(response);
+      setSelectedConversation(data);
+    } catch (err) {
+      setDashboardError(err.message || "Could not load conversation.");
+    } finally {
+      setDetailsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadBotData();
+  }, [chatbot?.id, session.token, session.company.id]);
 
   const createCompany = async (event) => {
     event.preventDefault();
 
     if (!newCompanyName.trim()) {
       setError("Enter your company name.");
+      return;
+    }
+    if (!newCompanyEmail.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newCompanyEmail.trim())) {
+      setError("Enter a valid company email address.");
       return;
     }
 
@@ -119,13 +227,17 @@ export default function AdminDashboard({ onBack }) {
       const response = await fetch(`${API}/companies/`, {
         method: "POST",
         headers: headers(),
-        body: JSON.stringify({ name: newCompanyName.trim() })
+        body: JSON.stringify({
+          name: newCompanyName.trim(),
+          email: newCompanyEmail.trim()
+        })
       });
 
       await readResponse(response);
 
-      setMessage("Company created successfully.");
-      await loadCompany();
+      setMessage("Verification email sent. Open the link in your company inbox to activate your account.");
+      setNewCompanyName("");
+      setNewCompanyEmail("");
     } catch (err) {
       setError(err.message);
     } finally {
@@ -184,8 +296,7 @@ export default function AdminDashboard({ onBack }) {
 
       const response = await fetch(`${API}/knowledge-base/upload`, {
         method: "POST",
-        headers: {
-        },
+        headers: headers(),
         body: formData
       });
 
@@ -299,6 +410,134 @@ export default function AdminDashboard({ onBack }) {
           </button>
         </header>
 
+        <section style={{ marginBottom: 26, padding: 20, background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+            <div>
+              <h2 style={{ margin: "0 0 5px", fontSize: 21 }}> {chatbot?.bot_name || "Selected chatbot"} ? Overview</h2>
+              <p style={{ margin: 0, color: "#6b7280", fontSize: 13 }}>Activity belonging only to this chatbot</p>
+            </div>
+            <button type="button" onClick={loadBotData} style={{ padding: "9px 15px", border: 0, borderRadius: 7, background: "#7f1d3f", color: "#fff", cursor: "pointer" }}>Refresh data</button>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(135px,1fr))", gap: 12, marginTop: 18 }}>
+            {[
+              ["Conversations", conversations.length],
+              ["Tickets", tickets.length],
+              ["Open tickets", tickets.filter(t => String(t.status || "").toLowerCase() === "open").length],
+              ["Resolved tickets", tickets.filter(t => String(t.status || "").toLowerCase() === "resolved").length]
+            ].map(([label, value]) => (
+              <div key={label} style={{ padding: 15, borderRadius: 9, background: "#f9fafb", border: "1px solid #e5e7eb" }}>
+                <div style={{ color: "#6b7280", fontSize: 12 }}>{label}</div>
+                <strong style={{ display: "block", fontSize: 25, marginTop: 5 }}>{value}</strong>
+              </div>
+            ))}
+          </div>
+          {dashboardLoading && <p style={{ color: "#6b7280" }}>Loading chatbot activity...</p>}
+          {dashboardError && <p style={{ color: "#b91c1c" }}>{dashboardError}</p>}
+        </section>
+
+        <section style={{ marginBottom: 26, padding: 20, background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12 }}>
+          <h2 style={{ marginTop: 0 }}>Customer Conversations</h2>
+          {conversations.length === 0 && !dashboardLoading ? (
+            <p style={{ color: "#6b7280" }}>No conversations found for this chatbot yet.</p>
+          ) : conversations.map(c => (
+            <button key={c.id} type="button" onClick={() => openConversation(c)}
+              style={{ display: "block", width: "100%", textAlign: "left", padding: 14, marginBottom: 9, border: "1px solid #e5e7eb", borderRadius: 9, background: "#fff", cursor: "pointer", color: "#111827" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                <strong>{c.customer_email || c.customer_id || `Customer ? ${c.id}`}</strong>
+                <span style={{ color: "#6b7280", fontSize: 12 }}>{c.status || "Conversation"}</span>
+              </div>
+              <p style={{ margin: "7px 0", color: "#374151", fontSize: 13 }}>{c.last_message || "No messages"}</p>
+              <span style={{ color: "#6b7280", fontSize: 11 }}>
+                {c.message_count || 0} messages ? {c.last_activity ? new Date(c.last_activity).toLocaleString() : "Date unavailable"} ? ID {c.id}
+              </span>
+            </button>
+          ))}
+
+          {detailsLoading && <p>Loading conversation transcript...</p>}
+          {selectedConversation && (
+            <div style={{ marginTop: 18, padding: 16, border: "1px solid #cbd5e1", borderRadius: 10, background: "#f8fafc" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                <h3 style={{ margin: 0 }}>Conversation #{selectedConversation.id}</h3>
+                <button type="button" onClick={() => setSelectedConversation(null)} style={{ padding: "6px 10px", cursor: "pointer" }}>Close transcript</button>
+              </div>
+              <p style={{ color: "#64748b", fontSize: 12 }}>{selectedConversation.customer_email || selectedConversation.customer_id || "Customer"} ? {selectedConversation.status}</p>
+              <div style={{ display: "grid", gap: 9 }}>
+                {(selectedConversation.messages || []).map((m, i) => (
+                  <div key={m.id || i} style={{ padding: 12, borderRadius: 8, background: String(m.sender).toLowerCase().includes("user") || String(m.sender).toLowerCase().includes("customer") ? "#fff" : "#fce7f3", border: "1px solid #e5e7eb" }}>
+                    <strong style={{ fontSize: 12 }}>{m.sender || "Message"}</strong>
+                    <p style={{ margin: "5px 0", whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{m.content}</p>
+                    <span style={{ color: "#6b7280", fontSize: 10 }}>{m.timestamp ? new Date(m.timestamp).toLocaleString() : ""}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </section>
+
+        <section style={{ marginBottom: 26, padding: 20, background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12 }}>
+          <div style={{ marginBottom: 22, padding: 16, background: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: 9 }}>
+            <h3 style={{ marginTop: 0 }}>Support Agents</h3>
+            <form onSubmit={addSupportAgent}
+              style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
+              <input required placeholder="Agent name" value={agentName}
+                onChange={e => setAgentName(e.target.value)} />
+              <input required type="email" placeholder="Agent email" value={agentEmail}
+                onChange={e => setAgentEmail(e.target.value)} />
+              <button type="submit">Register Agent</button>
+            </form>
+            {agentMessage && <p style={{color:"#15803d"}}>{agentMessage}</p>}
+            {agentError && <p style={{color:"#b91c1c"}}>{agentError}</p>}
+            {agents.length === 0 ? (
+              <p style={{ color: "#6b7280" }}>No support agents registered for this company.</p>
+            ) : (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
+                {agents.map(agent => (
+                  <div key={agent.id} style={{ padding: 12, background: "#fff", border: "1px solid #e5e7eb", borderRadius: 8 }}>
+                    <strong>{agent.name || "Unnamed agent"}</strong>
+                    <div style={{ fontSize: 12, color: "#64748b" }}>{agent.email}</div>
+                    <div style={{ marginTop: 7, fontSize: 12 }}>
+                      Email: <strong style={{ color: agent.email_verified ? "#15803d" : "#b91c1c" }}>
+                        {agent.status === "approved" ? "Registered" : "Not verified"}
+                      </strong>
+                    </div>
+                    <div style={{ fontSize: 12 }}>
+                      Approval: <strong>{agent.status === "approved" ? "Approved" : "Pending"}</strong>
+                    </div>
+                    <div style={{ fontSize: 12, color: "#64748b" }}>Status: {agent.status}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          <h2 style={{ marginTop: 0 }}>Support Tickets</h2>
+          {tickets.length === 0 && !dashboardLoading ? (
+            <p style={{ color: "#6b7280" }}>No tickets found for this chatbot yet.</p>
+          ) : (
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                <thead><tr style={{ textAlign: "left", background: "#f9fafb" }}>
+                  {["Ticket ID", "Customer", "Issue", "Category", "Priority", "Status", "Assigned Agent", "Created"].map(x => <th key={x} style={{ padding: 10, borderBottom: "1px solid #e5e7eb" }}>{x}</th>)}
+                </tr></thead>
+                <tbody>
+                  {tickets.map((t, i) => (
+                    <tr key={t.ticket_id || t.id || i}>
+                      <td style={{ padding: 10, borderBottom: "1px solid #e5e7eb" }}>{t.ticket_id || t.id}</td>
+                      <td style={{ padding: 10, borderBottom: "1px solid #e5e7eb" }}>{t.customer_email || "Not provided"}</td>
+                      <td style={{ padding: 10, borderBottom: "1px solid #e5e7eb", minWidth: 180 }}>{t.customer_message || t.additional_details || "?"}</td>
+                      <td style={{ padding: 10, borderBottom: "1px solid #e5e7eb" }}>{t.category || t.intent || "?"}</td>
+                      <td style={{ padding: 10, borderBottom: "1px solid #e5e7eb" }}>{t.priority || "?"}</td>
+                      <td style={{ padding: 10, borderBottom: "1px solid #e5e7eb" }}>{t.status || "?"}</td>
+                      <td style={{ padding: 10, borderBottom: "1px solid #e5e7eb" }}>{t.assigned_agent?.name || t.assigned_agent?.email || "Unassigned"}</td>
+                      <td style={{ padding: 10, borderBottom: "1px solid #e5e7eb", whiteSpace: "nowrap" }}>{t.created_at ? new Date(t.created_at).toLocaleString() : "?"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+
 
 
         {error && (
@@ -350,8 +589,21 @@ export default function AdminDashboard({ onBack }) {
                 style={{ ...inputStyle, marginBottom: 14 }}
               />
 
+              <label style={{ display: "block", marginBottom: 8 }}>
+                Company Email
+              </label>
+
+              <input
+                type="email"
+                value={newCompanyEmail}
+                onChange={(e) => setNewCompanyEmail(e.target.value)}
+                placeholder="Enter your business email"
+                required
+                style={{ ...inputStyle, marginBottom: 14 }}
+              />
+
               <button disabled={loading} style={buttonStyle}>
-                {loading ? "Creating..." : "Create Company"}
+                {loading ? "Registering..." : "Register Agent"}
               </button>
             </form>
           </section>

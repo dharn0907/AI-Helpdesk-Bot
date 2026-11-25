@@ -1,30 +1,25 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Header, HTTPException
 from database.database import SessionLocal
+from services.workspace_auth import get_workspace_company
 from database.models import (
     Company,
     Conversation,
     ConversationMessage,
     Ticket,
     TicketResolutionReview,
+    Chatbot,
 )
 
 router = APIRouter(prefix="/conversations", tags=["Conversations"])
 
 
-def get_active_company(db):
-    return (
-        db.query(Company)
-        .filter(Company.is_active.is_(True))
-        .first()
-    )
-
-
-def get_conversation_for_company(db, conversation_id, company):
+def get_conversation_for_company(db, conversation_id, company, chatbot_id):
     return (
         db.query(Conversation)
         .filter(
             Conversation.id == conversation_id,
-            Conversation.company_id == company.id,
+            Conversation.company_id == company['id'],
+            Conversation.chatbot_id == chatbot_id,
         )
         .first()
     )
@@ -32,18 +27,33 @@ def get_conversation_for_company(db, conversation_id, company):
 
 # Get all conversations
 @router.get("/")
-def get_conversations():
+def get_conversations(
+    chatbot_id: int,
+    authorization: str = Header(default=None),
+    x_company_id: int = Header(default=None, alias="X-Company-ID"),
+):
     db = SessionLocal()
 
     try:
-        company = get_active_company(db)
+        company = get_workspace_company(authorization, x_company_id, db)
 
         if not company:
-            return []
+            raise HTTPException(status_code=404, detail="Company not found")
+
+        chatbot = db.query(Chatbot).filter(
+            Chatbot.id == chatbot_id,
+            Chatbot.organization_id == company["id"],
+            Chatbot.status == "active",
+        ).first()
+        if not chatbot:
+            raise HTTPException(status_code=404, detail="Chatbot not found")
 
         conversations = (
             db.query(Conversation)
-            .filter(Conversation.company_id == company.id)
+            .filter(
+                Conversation.company_id == company['id'],
+                Conversation.chatbot_id == chatbot_id,
+            )
             .order_by(Conversation.last_activity.desc())
             .all()
         )
@@ -84,11 +94,16 @@ def get_conversations():
 # Get a particular conversation with its full transcript
 # and approved historical solutions
 @router.get("/{conversation_id}")
-def get_conversation_details(conversation_id: int):
+def get_conversation_details(
+    conversation_id: int,
+    chatbot_id: int,
+    authorization: str = Header(default=None),
+    x_company_id: int = Header(default=None, alias="X-Company-ID"),
+):
     db = SessionLocal()
 
     try:
-        company = get_active_company(db)
+        company = get_workspace_company(authorization, x_company_id, db)
 
         if not company:
             raise HTTPException(
@@ -97,7 +112,7 @@ def get_conversation_details(conversation_id: int):
             )
 
         conversation = get_conversation_for_company(
-            db, conversation_id, company
+            db, conversation_id, company, chatbot_id
         )
 
         if not conversation:
@@ -125,7 +140,7 @@ def get_conversation_details(conversation_id: int):
             )
             .filter(
                 Ticket.session_id == conversation.session_id,
-                TicketResolutionReview.company_id == company.id,
+                TicketResolutionReview.company_id == company['id'],
                 TicketResolutionReview.approval_status == "approved",
                 TicketResolutionReview.approved_solution != "",
             )
@@ -176,11 +191,13 @@ def update_historical_solution(
     conversation_id: int,
     ticket_id: str,
     data: dict,
+    authorization: str = Header(default=None),
+    x_company_id: int = Header(default=None, alias='X-Company-ID')
 ):
     db = SessionLocal()
 
     try:
-        company = get_active_company(db)
+        company = get_workspace_company(authorization, x_company_id, db)
 
         if not company:
             raise HTTPException(
@@ -217,7 +234,7 @@ def update_historical_solution(
             db.query(TicketResolutionReview)
             .filter(
                 TicketResolutionReview.ticket_id == ticket_id,
-                TicketResolutionReview.company_id == company.id,
+                TicketResolutionReview.company_id == company['id'],
                 TicketResolutionReview.approval_status == "approved",
             )
             .first()
@@ -263,11 +280,13 @@ def update_historical_solution(
 def delete_historical_solution(
     conversation_id: int,
     ticket_id: str,
+    authorization: str = Header(default=None),
+    x_company_id: int = Header(default=None, alias='X-Company-ID')
 ):
     db = SessionLocal()
 
     try:
-        company = get_active_company(db)
+        company = get_workspace_company(authorization, x_company_id, db)
 
         if not company:
             raise HTTPException(
@@ -304,7 +323,7 @@ def delete_historical_solution(
             db.query(TicketResolutionReview)
             .filter(
                 TicketResolutionReview.ticket_id == ticket_id,
-                TicketResolutionReview.company_id == company.id,
+                TicketResolutionReview.company_id == company['id'],
                 TicketResolutionReview.approval_status == "approved",
             )
             .first()

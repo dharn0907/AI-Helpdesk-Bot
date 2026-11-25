@@ -1,22 +1,37 @@
-﻿
 const API_BASE_URL = "http://127.0.0.1:8000";
 
-// Fetch all tickets from the backend
-export const getTickets = async () => {
-  const response = await fetch(`${API_BASE_URL}/tickets/`);
+const getAgentEmail = () => {
+  const agent = JSON.parse(sessionStorage.getItem("agent") || "null");
 
-  if (!response.ok) {
-    throw new Error("Failed to fetch tickets");
+  if (!agent?.email) {
+    throw new Error("Agent session not found. Please log in again.");
   }
 
-  return await response.json();
+  return agent.email;
+};
+
+// Fetch only tickets belonging to the logged-in agent's company
+export const getTickets = async () => {
+  const response = await fetch(`${API_BASE_URL}/tickets/agents/tickets`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ email: getAgentEmail() }),
+  });
+
+  const result = await response.json();
+
+  if (!response.ok) {
+    throw new Error(result.detail || "Failed to fetch company tickets");
+  }
+
+  return result;
 };
 
 // Fetch a particular ticket
 export const getTicketById = async (ticketId) => {
-  const response = await fetch(
-    `${API_BASE_URL}/tickets/${ticketId}`
-  );
+  const response = await fetch(`${API_BASE_URL}/tickets/${ticketId}`);
 
   if (!response.ok) {
     throw new Error("Failed to fetch ticket details");
@@ -27,16 +42,13 @@ export const getTicketById = async (ticketId) => {
 
 // Update ticket status and agent reply
 export const updateTicket = async (ticketId, data) => {
-  const response = await fetch(
-    `${API_BASE_URL}/tickets/${ticketId}`,
-    {
-      method: "PATCH",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(data),
-    }
-  );
+  const response = await fetch(`${API_BASE_URL}/tickets/${ticketId}`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(data),
+  });
 
   if (!response.ok) {
     throw new Error("Failed to update ticket");
@@ -51,9 +63,7 @@ export const reviewTicketResolution = async (ticketId, data) => {
     `${API_BASE_URL}/tickets/${ticketId}/resolution-review`,
     {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
     }
   );
@@ -61,9 +71,7 @@ export const reviewTicketResolution = async (ticketId, data) => {
   const result = await response.json();
 
   if (!response.ok) {
-    throw new Error(
-      result.detail || "Failed to submit resolution review"
-    );
+    throw new Error(result.detail || "Failed to submit resolution review");
   }
 
   return result;
@@ -78,9 +86,7 @@ export const getTicketResolutionReview = async (ticketId) => {
   const result = await response.json();
 
   if (!response.ok) {
-    throw new Error(
-      result.detail || "Failed to fetch resolution review"
-    );
+    throw new Error(result.detail || "Failed to fetch resolution review");
   }
 
   return result;
@@ -92,9 +98,7 @@ export const summarizeTicket = async (ticketId, mode) => {
     `${API_BASE_URL}/tickets/${ticketId}/summarize`,
     {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ mode }),
     }
   );
@@ -102,13 +106,12 @@ export const summarizeTicket = async (ticketId, mode) => {
   const result = await response.json();
 
   if (!response.ok) {
-    throw new Error(
-      result.detail || "Failed to summarize ticket."
-    );
+    throw new Error(result.detail || "Failed to summarize ticket.");
   }
 
   return result;
 };
+
 // Fetch similar tickets
 export const getSimilarTickets = async (ticketId) => {
   const response = await fetch(
@@ -118,9 +121,7 @@ export const getSimilarTickets = async (ticketId) => {
   const result = await response.json();
 
   if (!response.ok) {
-    throw new Error(
-      result.detail || "Failed to fetch similar tickets"
-    );
+    throw new Error(result.detail || "Failed to fetch similar tickets");
   }
 
   return result;

@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from sqlalchemy.orm import Session
 
 from database.database import get_db
+from services.workspace_auth import get_workspace_company
 from database.models import Company, Ticket, TicketResolutionReview
 
 router = APIRouter(
@@ -10,23 +11,9 @@ router = APIRouter(
 )
 
 
-def get_active_company(db: Session):
-    company = db.query(Company).filter(
-        Company.is_active.is_(True)
-    ).order_by(Company.id.asc()).first()
-
-    if not company:
-        raise HTTPException(
-            status_code=404,
-            detail="No active company found."
-        )
-
-    return company
-
-
 @router.get("/")
 def get_historical_solutions(db: Session = Depends(get_db)):
-    company = get_active_company(db)
+    company = get_workspace_company(authorization, x_company_id, db)
 
     reviews = (
         db.query(TicketResolutionReview, Ticket)
@@ -35,7 +22,7 @@ def get_historical_solutions(db: Session = Depends(get_db)):
             Ticket.ticket_id == TicketResolutionReview.ticket_id
         )
         .filter(
-            TicketResolutionReview.company_id == company.id,
+            TicketResolutionReview.company_id == company['id'],
             TicketResolutionReview.approval_status == "approved",
             TicketResolutionReview.approved_solution.isnot(None),
             TicketResolutionReview.approved_solution != ""
@@ -69,13 +56,15 @@ def get_historical_solutions(db: Session = Depends(get_db)):
 def update_historical_solution(
     ticket_id: str,
     data: dict,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    authorization: str = Header(default=None),
+    x_company_id: int = Header(default=None, alias='X-Company-ID')
 ):
-    company = get_active_company(db)
+    company = get_workspace_company(authorization, x_company_id, db)
 
     review = db.query(TicketResolutionReview).filter(
         TicketResolutionReview.ticket_id == ticket_id,
-        TicketResolutionReview.company_id == company.id,
+        TicketResolutionReview.company_id == company['id'],
         TicketResolutionReview.approval_status == "approved"
     ).first()
 
@@ -110,13 +99,15 @@ def update_historical_solution(
 @router.delete("/{ticket_id}")
 def delete_historical_solution(
     ticket_id: str,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    authorization: str = Header(default=None),
+    x_company_id: int = Header(default=None, alias='X-Company-ID')
 ):
-    company = get_active_company(db)
+    company = get_workspace_company(authorization, x_company_id, db)
 
     review = db.query(TicketResolutionReview).filter(
         TicketResolutionReview.ticket_id == ticket_id,
-        TicketResolutionReview.company_id == company.id,
+        TicketResolutionReview.company_id == company['id'],
         TicketResolutionReview.approval_status == "approved"
     ).first()
 

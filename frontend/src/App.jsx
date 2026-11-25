@@ -1,8 +1,11 @@
-﻿
+import BotManager from "./BotManager";
+
 import { useEffect, useRef, useState } from "react";
 import AdminDashboard from "./AdminDashboard.jsx";
+import CompanyAccess from "./CompanyAccess.jsx";
+import AgentHelpdesk from "./AgentHelpdesk.jsx";
 
-function App() {
+function ChatApp() {
   const [activeView, setActiveView] = useState("chat");
   const [message, setMessage] = useState("");
   const [messages, setMessages] = useState([]);
@@ -582,6 +585,7 @@ function App() {
 
         </div>
       </div>
+
     </div>
   );
 }
@@ -719,6 +723,246 @@ const styles = {
     cursor: "pointer"
   }
 };
+
+
+
+function MainApp() {
+  const [session, setSession] = useState(() => {
+    try {
+      const saved = localStorage.getItem("helpdesk_company_session");
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
+
+  const [companies, setCompanies] = useState([]);
+  const [companyName, setCompanyName] = useState("");
+  const [showCreate, setShowCreate] = useState(false);
+  const [companyLoading, setCompanyLoading] = useState(false);
+  const [companyError, setCompanyError] = useState("");
+
+  const saveSession = (next) => {
+    localStorage.setItem("helpdesk_company_session", JSON.stringify(next));
+    setSession(next);
+  };
+
+  const loadCompanies = async () => {
+    if (!session?.token) return;
+
+    try {
+      const response = await fetch("http://127.0.0.1:8000/companies/auth/companies", {
+        headers: { Authorization: `Bearer ${session.token}` }
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Could not load companies.");
+
+      const list = data.companies || [];
+      setCompanies(list);
+
+      const currentExists = list.some(
+        c => String(c.id) === String(session.company?.id)
+      );
+
+      if (!currentExists && list.length > 0) {
+        saveSession({ ...session, company: list[0] });
+      }
+    } catch (err) {
+      setCompanyError(err.message);
+    }
+  };
+
+  useEffect(() => {
+    loadCompanies();
+  }, [session?.token]);
+
+  const createCompany = async (e) => {
+    e.preventDefault();
+    if (!companyName.trim()) return;
+
+    setCompanyLoading(true);
+    setCompanyError("");
+
+    try {
+      const response = await fetch("http://127.0.0.1:8000/companies/auth/companies", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.token}`
+        },
+        body: JSON.stringify({ name: companyName.trim() })
+      });
+
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Could not create company.");
+
+      const listResponse = await fetch("http://127.0.0.1:8000/companies/auth/companies", {
+        headers: { Authorization: `Bearer ${session.token}` }
+      });
+      const listData = await listResponse.json();
+      if (!listResponse.ok) throw new Error(listData.detail || "Company created, but list refresh failed.");
+
+      const list = listData.companies || [];
+      setCompanies(list);
+
+      const created = list.find(c => String(c.id) === String(data.company?.id))
+        || list.find(c => c.name === companyName.trim());
+
+      if (created) saveSession({ ...session, company: created });
+
+      setCompanyName("");
+      setShowCreate(false);
+    } catch (err) {
+      setCompanyError(err.message);
+    } finally {
+      setCompanyLoading(false);
+    }
+  };
+
+  const switchCompany = (id) => {
+    const selected = companies.find(c => String(c.id) === String(id));
+    if (selected) saveSession({ ...session, company: selected });
+  };
+
+  const logout = () => {
+    localStorage.removeItem("helpdesk_company_session");
+    setSession(null);
+    setCompanies([]);
+  };
+
+  const handleComplete = (newSession) => {
+    saveSession(newSession);
+  };
+
+  if (!session?.token || !session?.company?.id) {
+    return <CompanyAccess onComplete={handleComplete} />;
+  }
+
+  return (
+    <div style={{ minHeight: "100vh" }}>
+      <div style={{
+        minHeight: 58,
+        padding: "9px 18px",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 12,
+        flexWrap: "wrap",
+        background: "#111827",
+        color: "white",
+        fontFamily: "Arial, sans-serif",
+        boxSizing: "border-box"
+      }}>
+        <div style={{ fontWeight: 700 }}>AI HELPDESK</div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 9, flexWrap: "wrap" }}>
+          <span style={{ fontSize: 13 }}>Workspace:</span>
+
+          <select
+            value={session.company.id}
+            onChange={e => switchCompany(e.target.value)}
+            style={{
+              padding: "9px 12px",
+              borderRadius: 7,
+              border: "1px solid #4b5563",
+              background: "#1f2937",
+              color: "white",
+              minWidth: 170
+            }}
+          >
+            {companies.map(company => (
+              <option key={company.id} value={company.id}>
+                {company.name}
+              </option>
+            ))}
+          </select>
+
+          <button
+            onClick={() => {
+              setShowCreate(v => !v);
+              setCompanyError("");
+            }}
+            style={{
+              padding: "9px 12px",
+              border: 0,
+              borderRadius: 7,
+              background: "#2563eb",
+              color: "white",
+              cursor: "pointer"
+            }}
+          >
+            + Create company
+          </button>
+
+          <button
+            onClick={logout}
+            style={{
+              padding: "9px 12px",
+              border: "1px solid #6b7280",
+              borderRadius: 7,
+              background: "transparent",
+              color: "white",
+              cursor: "pointer"
+            }}
+          >
+            Log out
+          </button>
+        </div>
+      </div>
+
+      {(showCreate || companyError) && (
+        <div style={{
+          padding: 12,
+          background: "#f3f4f6",
+          display: "flex",
+          justifyContent: "center",
+          gap: 8,
+          flexWrap: "wrap"
+        }}>
+          {showCreate && (
+            <form onSubmit={createCompany} style={{ display: "flex", gap: 8 }}>
+              <input
+                value={companyName}
+                onChange={e => setCompanyName(e.target.value)}
+                placeholder="New company name"
+                required
+                style={{ padding: 10, border: "1px solid #d1d5db", borderRadius: 7 }}
+              />
+              <button disabled={companyLoading} style={{
+                padding: "10px 14px",
+                background: "#16a34a",
+                color: "white",
+                border: 0,
+                borderRadius: 7,
+                cursor: "pointer"
+              }}>
+                {companyLoading ? "Creating..." : "Save company"}
+              </button>
+              <button type="button" onClick={() => setShowCreate(false)} style={{
+                padding: "10px 14px",
+                border: "1px solid #d1d5db",
+                borderRadius: 7,
+                cursor: "pointer"
+              }}>
+                Cancel
+              </button>
+            </form>
+          )}
+          {companyError && (
+            <div style={{ color: "#b91c1c", fontSize: 13 }}>{companyError}</div>
+          )}
+        </div>
+      )}
+
+      <BotManager session={session} />
+    </div>
+  );
+}
+
+function App() {
+  if (window.location.pathname === "/agent") return <AgentHelpdesk />;
+  return <MainApp />;
+}
 
 export default App;
 

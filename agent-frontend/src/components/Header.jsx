@@ -1,7 +1,14 @@
-
-import { Bell, CircleUserRound } from "lucide-react";
+import { Bell, CircleUserRound, LogOut } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
 function Header() {
+  const navigate = useNavigate();
+
+  const handleLogout = () => {
+    sessionStorage.removeItem("agent");
+    navigate("/login", { replace: true });
+  };
+
   return (
     <header className="top-header">
       <div className="header-title">
@@ -22,6 +29,27 @@ function Header() {
           <strong>Support Agent</strong>
           <span>Human Support</span>
         </div>
+
+        <button
+          type="button"
+          onClick={handleLogout}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "8px",
+            padding: "10px 16px",
+            marginLeft: "16px",
+            background: "#dc2626",
+            color: "#ffffff",
+            border: "none",
+            borderRadius: "8px",
+            cursor: "pointer",
+            fontWeight: 600
+          }}
+        >
+          <LogOut size={18} />
+          Logout
+        </button>
       </div>
     </header>
   );

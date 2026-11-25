@@ -1,8 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
 
 from database.database import get_db
+from services.workspace_auth import get_workspace_company
 from database.models import Company, HistoricalSolutionAttempt
 
 router = APIRouter(
@@ -11,30 +12,18 @@ router = APIRouter(
 )
 
 
-def get_active_company(db: Session):
-    company = db.query(Company).filter(
-        Company.is_active.is_(True)
-    ).order_by(Company.id.asc()).first()
-
-    if not company:
-        raise HTTPException(
-            status_code=404,
-            detail="No active company found."
-        )
-
-    return company
-
-
 @router.get("/")
 def get_historical_solution_attempts(
     status: str = None,
     search: str = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    authorization: str = Header(default=None),
+    x_company_id: int = Header(default=None, alias='X-Company-ID')
 ):
-    company = get_active_company(db)
+    company = get_workspace_company(authorization, x_company_id, db)
 
     query = db.query(HistoricalSolutionAttempt).filter(
-        HistoricalSolutionAttempt.company_id == company.id
+        HistoricalSolutionAttempt.company_id == company['id']
     )
 
     # Filter by attempt status
