@@ -3,7 +3,12 @@ from sqlalchemy.orm import Session
 
 from database.database import get_db
 from services.workspace_auth import get_workspace_company
-from database.models import Company, Ticket, TicketResolutionReview
+from database.models import (
+    Company,
+    Ticket,
+    TicketResolutionReview,
+    OrganizationMember,
+)
 
 router = APIRouter(
     prefix="/historical-solutions",
@@ -11,9 +16,42 @@ router = APIRouter(
 )
 
 
+def get_agent_company(db, email, company_id):
+    email = str(email or "").strip().lower()
+
+    if not email or not company_id:
+        raise HTTPException(401, "Agent email or company ID is missing.")
+
+    member = db.query(OrganizationMember).filter(
+        OrganizationMember.email == email,
+        OrganizationMember.organization_id == company_id,
+        OrganizationMember.role == "support_agent",
+        OrganizationMember.status == "approved",
+    ).first()
+
+    if not member:
+        raise HTTPException(401, "Approved agent membership not found for this company.")
+
+    return {"id": member.organization_id}
+
+
+def get_request_company(db, authorization, x_company_id, agent_email):
+    if agent_email:
+        return get_agent_company(db, agent_email, x_company_id)
+
+    return get_workspace_company(authorization, x_company_id, db)
+
+
 @router.get("/")
-def get_historical_solutions(db: Session = Depends(get_db)):
-    company = get_workspace_company(authorization, x_company_id, db)
+def get_historical_solutions(
+    db: Session = Depends(get_db),
+    authorization: str = Header(default=None),
+    x_company_id: int = Header(default=None, alias="X-Company-ID"),
+    agent_email: str = Header(default=None, alias="X-Agent-Email"),
+):
+    company = get_request_company(
+        db, authorization, x_company_id, agent_email
+    )
 
     reviews = (
         db.query(TicketResolutionReview, Ticket)
@@ -22,7 +60,7 @@ def get_historical_solutions(db: Session = Depends(get_db)):
             Ticket.ticket_id == TicketResolutionReview.ticket_id
         )
         .filter(
-            TicketResolutionReview.company_id == company['id'],
+            TicketResolutionReview.company_id == company["id"],
             TicketResolutionReview.approval_status == "approved",
             TicketResolutionReview.approved_solution.isnot(None),
             TicketResolutionReview.approved_solution != ""
@@ -58,13 +96,16 @@ def update_historical_solution(
     data: dict,
     db: Session = Depends(get_db),
     authorization: str = Header(default=None),
-    x_company_id: int = Header(default=None, alias='X-Company-ID')
+    x_company_id: int = Header(default=None, alias="X-Company-ID"),
+    agent_email: str = Header(default=None, alias="X-Agent-Email"),
 ):
-    company = get_workspace_company(authorization, x_company_id, db)
+    company = get_request_company(
+        db, authorization, x_company_id, agent_email
+    )
 
     review = db.query(TicketResolutionReview).filter(
         TicketResolutionReview.ticket_id == ticket_id,
-        TicketResolutionReview.company_id == company['id'],
+        TicketResolutionReview.company_id == company["id"],
         TicketResolutionReview.approval_status == "approved"
     ).first()
 
@@ -74,9 +115,7 @@ def update_historical_solution(
             detail="Approved historical solution not found."
         )
 
-    solution = str(
-        data.get("approved_solution", "")
-    ).strip()
+    solution = str(data.get("approved_solution", "")).strip()
 
     if not solution:
         raise HTTPException(
@@ -101,13 +140,16 @@ def delete_historical_solution(
     ticket_id: str,
     db: Session = Depends(get_db),
     authorization: str = Header(default=None),
-    x_company_id: int = Header(default=None, alias='X-Company-ID')
+    x_company_id: int = Header(default=None, alias="X-Company-ID"),
+    agent_email: str = Header(default=None, alias="X-Agent-Email"),
 ):
-    company = get_workspace_company(authorization, x_company_id, db)
+    company = get_request_company(
+        db, authorization, x_company_id, agent_email
+    )
 
     review = db.query(TicketResolutionReview).filter(
         TicketResolutionReview.ticket_id == ticket_id,
-        TicketResolutionReview.company_id == company['id'],
+        TicketResolutionReview.company_id == company["id"],
         TicketResolutionReview.approval_status == "approved"
     ).first()
 

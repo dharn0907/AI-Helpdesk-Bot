@@ -28,7 +28,11 @@ export default function BotManager({ session }) {
       const res = await fetch(`${API}/companies/current/chatbots`, { headers });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || "Could not load chatbots");
-      setBots(Array.isArray(data) ? data : []);
+      setBots(
+        Array.isArray(data)
+          ? data.filter(bot => bot.status !== "inactive")
+          : []
+      );
     } catch (e) {
       setError(e.message);
     } finally {
@@ -71,7 +75,11 @@ export default function BotManager({ session }) {
     return (
       <div>
         <div style={{ padding: "12px 24px", borderBottom: "1px solid #ddd" }}>
-          <button onClick={() => { setSelectedBot(null); setTestBotOpen(false); }}>â† Back to My Chatbots</button>
+          <button onClick={() => {
+            setSelectedBot(null);
+            setTestBotOpen(false);
+            loadBots();
+          }}>â† Back to My Chatbots</button>
           <strong style={{ marginLeft: 16 }}>{selectedBot.bot_name}</strong>
           <button style={{ marginLeft: 16 }} onClick={() => setTestBotOpen(v => !v)}>{testBotOpen ? "Close Test Bot" : "Test Bot"}</button>
         </div>

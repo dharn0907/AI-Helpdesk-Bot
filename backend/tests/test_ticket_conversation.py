@@ -1,4 +1,4 @@
-
+﻿
 import unittest
 from unittest.mock import MagicMock, patch
 from types import SimpleNamespace
@@ -388,7 +388,6 @@ class TicketConversationTests(unittest.TestCase):
             "customer@example.com",
         )
 
-    @patch("main.interpret_ticket_message")
     def test_complete_ticket_conversation_end_to_end(self, mock_interpret):
 
         mock_interpret.side_effect = [

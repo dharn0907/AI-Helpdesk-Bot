@@ -3,6 +3,17 @@ import "./Conversations.css";
 
 const API = "http://127.0.0.1:8000";
 
+function getAgentHeaders() {
+  const agent = JSON.parse(sessionStorage.getItem("agent") || "null");
+  if (!agent?.email || !agent?.company_id) {
+    throw new Error("Agent session or company not found. Please log in again.");
+  }
+  return {
+    "X-Agent-Email": agent.email,
+    "X-Company-ID": String(agent.company_id),
+  };
+}
+
 function formatDate(date) {
   if (!date) return "—";
 
@@ -42,7 +53,7 @@ export default function Conversations() {
       setError("");
       setSuccessMessage("");
 
-      const response = await fetch(`${API}/conversations/`);
+      const response = await fetch(`${API}/conversations/`, { headers: getAgentHeaders() });
 
       if (!response.ok) {
         throw new Error("Failed to load conversations");
@@ -76,7 +87,7 @@ export default function Conversations() {
     setDetailLoading(true);
 
     try {
-      const response = await fetch(`${API}/conversations/${id}`);
+      const response = await fetch(`${API}/conversations/${id}`, { headers: getAgentHeaders() });
 
       if (!response.ok) {
         throw new Error("Failed to load conversation details");
@@ -126,6 +137,7 @@ export default function Conversations() {
           method: "PATCH",
           headers: {
             "Content-Type": "application/json",
+            ...getAgentHeaders(),
           },
           body: JSON.stringify({
             approved_solution: trimmedSolution,
@@ -185,6 +197,7 @@ export default function Conversations() {
         )}`,
         {
           method: "DELETE",
+          headers: getAgentHeaders(),
         }
       );
 

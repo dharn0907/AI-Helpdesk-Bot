@@ -1,13 +1,23 @@
 const API_BASE_URL = "http://127.0.0.1:8000";
 
-const getAgentEmail = () => {
+const getAgent = () => {
   const agent = JSON.parse(sessionStorage.getItem("agent") || "null");
 
-  if (!agent?.email) {
-    throw new Error("Agent session not found. Please log in again.");
+  if (!agent?.email || !agent?.company_id) {
+    throw new Error("Agent session or company not found. Please log in again.");
   }
 
-  return agent.email;
+  return agent;
+};
+
+const getAgentEmail = () => getAgent().email;
+
+const getAgentHeaders = () => {
+  const agent = getAgent();
+  return {
+    "X-Agent-Email": agent.email,
+    "X-Company-ID": String(agent.company_id),
+  };
 };
 
 // Fetch only tickets belonging to the logged-in agent's company
@@ -17,7 +27,7 @@ export const getTickets = async () => {
     headers: {
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ email: getAgentEmail() }),
+    body: JSON.stringify({ email: getAgentEmail(), company_id: getAgent().company_id }),
   });
 
   const result = await response.json();
@@ -31,7 +41,7 @@ export const getTickets = async () => {
 
 // Fetch a particular ticket
 export const getTicketById = async (ticketId) => {
-  const response = await fetch(`${API_BASE_URL}/tickets/${ticketId}`);
+  const response = await fetch(`${API_BASE_URL}/tickets/${ticketId}`, { headers: getAgentHeaders() });
 
   if (!response.ok) {
     throw new Error("Failed to fetch ticket details");
@@ -46,6 +56,7 @@ export const updateTicket = async (ticketId, data) => {
     method: "PATCH",
     headers: {
       "Content-Type": "application/json",
+      ...getAgentHeaders(),
     },
     body: JSON.stringify(data),
   });
@@ -63,7 +74,7 @@ export const reviewTicketResolution = async (ticketId, data) => {
     `${API_BASE_URL}/tickets/${ticketId}/resolution-review`,
     {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...getAgentHeaders() },
       body: JSON.stringify(data),
     }
   );
@@ -80,7 +91,8 @@ export const reviewTicketResolution = async (ticketId, data) => {
 // Fetch the existing reusable-solution approval status
 export const getTicketResolutionReview = async (ticketId) => {
   const response = await fetch(
-    `${API_BASE_URL}/tickets/${ticketId}/resolution-review`
+    `${API_BASE_URL}/tickets/${ticketId}/resolution-review`,
+    { headers: getAgentHeaders() }
   );
 
   const result = await response.json();
@@ -98,7 +110,7 @@ export const summarizeTicket = async (ticketId, mode) => {
     `${API_BASE_URL}/tickets/${ticketId}/summarize`,
     {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...getAgentHeaders() },
       body: JSON.stringify({ mode }),
     }
   );
@@ -115,7 +127,8 @@ export const summarizeTicket = async (ticketId, mode) => {
 // Fetch similar tickets
 export const getSimilarTickets = async (ticketId) => {
   const response = await fetch(
-    `${API_BASE_URL}/tickets/${ticketId}/similar`
+    `${API_BASE_URL}/tickets/${ticketId}/similar`,
+    { headers: getAgentHeaders() }
   );
 
   const result = await response.json();

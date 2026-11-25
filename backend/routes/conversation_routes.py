@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Header, HTTPException
+﻿from fastapi import APIRouter, Header, HTTPException
 from database.database import SessionLocal
 from services.workspace_auth import get_workspace_company
 from database.models import (
@@ -8,6 +8,7 @@ from database.models import (
     Ticket,
     TicketResolutionReview,
     Chatbot,
+    OrganizationMember,
 )
 
 router = APIRouter(prefix="/conversations", tags=["Conversations"])
@@ -24,53 +25,78 @@ def get_conversation_for_company(db, conversation_id, company, chatbot_id):
         .first()
     )
 
+def get_agent_company(db, email, company_id):
+    email = str(email or "").strip().lower()
+
+    if not email or not company_id:
+        raise HTTPException(401, "Agent email or company ID is missing.")
+
+    member = db.query(OrganizationMember).filter(
+        OrganizationMember.email == email,
+        OrganizationMember.organization_id == company_id,
+        OrganizationMember.role == "support_agent",
+        OrganizationMember.status == "approved",
+    ).first()
+
+    if not member:
+        raise HTTPException(401, "Approved agent membership not found for this company.")
+
+    return {"id": member.organization_id}
+
+
+def get_request_company(db, authorization, x_company_id, agent_email):
+    if agent_email:
+        return get_agent_company(db, agent_email, x_company_id)
+    return get_workspace_company(authorization, x_company_id, db)
+
+
 
 # Get all conversations
 @router.get("/")
 def get_conversations(
-    chatbot_id: int,
+    chatbot_id: int | None = None,
     authorization: str = Header(default=None),
     x_company_id: int = Header(default=None, alias="X-Company-ID"),
+    agent_email: str = Header(default=None, alias="X-Agent-Email"),
 ):
     db = SessionLocal()
-
     try:
-        company = get_workspace_company(authorization, x_company_id, db)
+        company = get_request_company(db, authorization, x_company_id, agent_email)
 
         if not company:
-            raise HTTPException(status_code=404, detail="Company not found")
+            raise HTTPException(404, "Company not found")
 
-        chatbot = db.query(Chatbot).filter(
-            Chatbot.id == chatbot_id,
-            Chatbot.organization_id == company["id"],
-            Chatbot.status == "active",
-        ).first()
-        if not chatbot:
-            raise HTTPException(status_code=404, detail="Chatbot not found")
-
-        conversations = (
-            db.query(Conversation)
-            .filter(
-                Conversation.company_id == company['id'],
-                Conversation.chatbot_id == chatbot_id,
-            )
-            .order_by(Conversation.last_activity.desc())
-            .all()
+        query = db.query(Conversation).filter(
+            Conversation.company_id == company["id"]
         )
 
-        result = []
+        if agent_email:
+            # Agents can view conversations belonging to their company.
+            pass
+        else:
+            if chatbot_id is None:
+                raise HTTPException(400, "chatbot_id is required")
+            chatbot = db.query(Chatbot).filter(
+                Chatbot.id == chatbot_id,
+                Chatbot.organization_id == company["id"],
+                Chatbot.status == "active",
+            ).first()
+            if not chatbot:
+                raise HTTPException(404, "Chatbot not found")
+            query = query.filter(Conversation.chatbot_id == chatbot_id)
 
+        conversations = query.order_by(
+            Conversation.last_activity.desc()
+        ).all()
+
+        result = []
         for conversation in conversations:
             messages = (
                 db.query(ConversationMessage)
-                .filter(
-                    ConversationMessage.conversation_id
-                    == conversation.id
-                )
+                .filter(ConversationMessage.conversation_id == conversation.id)
                 .order_by(ConversationMessage.timestamp.asc())
                 .all()
             )
-
             result.append({
                 "id": conversation.id,
                 "session_id": conversation.session_id,
@@ -80,13 +106,9 @@ def get_conversations(
                 "started_at": conversation.started_at,
                 "last_activity": conversation.last_activity,
                 "message_count": len(messages),
-                "last_message": (
-                    messages[-1].content if messages else None
-                ),
+                "last_message": messages[-1].content if messages else None,
             })
-
         return result
-
     finally:
         db.close()
 
@@ -96,70 +118,52 @@ def get_conversations(
 @router.get("/{conversation_id}")
 def get_conversation_details(
     conversation_id: int,
-    chatbot_id: int,
+    chatbot_id: int | None = None,
     authorization: str = Header(default=None),
     x_company_id: int = Header(default=None, alias="X-Company-ID"),
+    agent_email: str = Header(default=None, alias="X-Agent-Email"),
 ):
     db = SessionLocal()
-
     try:
-        company = get_workspace_company(authorization, x_company_id, db)
+        company = get_request_company(db, authorization, x_company_id, agent_email)
 
         if not company:
-            raise HTTPException(
-                status_code=404,
-                detail="Company not found",
-            )
+            raise HTTPException(404, "Company not found")
 
-        conversation = get_conversation_for_company(
-            db, conversation_id, company, chatbot_id
-        )
+        if agent_email:
+            conversation = db.query(Conversation).filter(
+                Conversation.id == conversation_id,
+                Conversation.company_id == company["id"],
+            ).first()
+        else:
+            if chatbot_id is None:
+                raise HTTPException(400, "chatbot_id is required")
+            conversation = get_conversation_for_company(
+                db, conversation_id, company, chatbot_id
+            )
 
         if not conversation:
-            raise HTTPException(
-                status_code=404,
-                detail="Conversation not found",
-            )
+            raise HTTPException(404, "Conversation not found")
 
         messages = (
             db.query(ConversationMessage)
-            .filter(
-                ConversationMessage.conversation_id
-                == conversation.id
-            )
+            .filter(ConversationMessage.conversation_id == conversation.id)
             .order_by(ConversationMessage.timestamp.asc())
             .all()
         )
 
         reviews = (
             db.query(TicketResolutionReview)
-            .join(
-                Ticket,
-                Ticket.ticket_id
-                == TicketResolutionReview.ticket_id,
-            )
+            .join(Ticket, Ticket.ticket_id == TicketResolutionReview.ticket_id)
             .filter(
                 Ticket.session_id == conversation.session_id,
-                TicketResolutionReview.company_id == company['id'],
+                TicketResolutionReview.company_id == company["id"],
                 TicketResolutionReview.approval_status == "approved",
                 TicketResolutionReview.approved_solution != "",
             )
-            .order_by(
-                TicketResolutionReview.created_at.desc()
-            )
+            .order_by(TicketResolutionReview.created_at.desc())
             .all()
         )
-
-        historical_solutions = [
-            {
-                "ticket_id": review.ticket_id,
-                "complaint": review.complaint,
-                "intent": review.intent,
-                "approved_solution": review.approved_solution,
-                "approval_status": review.approval_status,
-            }
-            for review in reviews
-        ]
 
         return {
             "id": conversation.id,
@@ -178,9 +182,17 @@ def get_conversation_details(
                 }
                 for message in messages
             ],
-            "historical_solutions": historical_solutions,
+            "historical_solutions": [
+                {
+                    "ticket_id": review.ticket_id,
+                    "complaint": review.complaint,
+                    "intent": review.intent,
+                    "approved_solution": review.approved_solution,
+                    "approval_status": review.approval_status,
+                }
+                for review in reviews
+            ],
         }
-
     finally:
         db.close()
 
@@ -191,73 +203,55 @@ def update_historical_solution(
     conversation_id: int,
     ticket_id: str,
     data: dict,
+    chatbot_id: int | None = None,
     authorization: str = Header(default=None),
-    x_company_id: int = Header(default=None, alias='X-Company-ID')
+    x_company_id: int = Header(default=None, alias="X-Company-ID"),
+    agent_email: str = Header(default=None, alias="X-Agent-Email"),
 ):
     db = SessionLocal()
-
     try:
-        company = get_workspace_company(authorization, x_company_id, db)
+        company = get_request_company(db, authorization, x_company_id, agent_email)
 
         if not company:
-            raise HTTPException(
-                status_code=404,
-                detail="Company not found",
-            )
+            raise HTTPException(404, "Company not found")
 
-        conversation = get_conversation_for_company(
-            db, conversation_id, company
+        if agent_email:
+            conversation = db.query(Conversation).filter(
+                Conversation.id == conversation_id,
+                Conversation.company_id == company["id"],
+            ).first()
+        else:
+            if chatbot_id is None:
+                raise HTTPException(400, "chatbot_id is required")
+            conversation = get_conversation_for_company(
+                db, conversation_id, company, chatbot_id
             )
 
         if not conversation:
-            raise HTTPException(
-                status_code=404,
-                detail="Conversation not found",
-            )
+            raise HTTPException(404, "Conversation not found")
 
-        ticket = (
-            db.query(Ticket)
-            .filter(
-                Ticket.ticket_id == ticket_id,
-                Ticket.session_id == conversation.session_id,
-            )
-            .first()
-        )
+        ticket = db.query(Ticket).filter(
+            Ticket.ticket_id == ticket_id,
+            Ticket.session_id == conversation.session_id,
+        ).first()
 
         if not ticket:
-            raise HTTPException(
-                status_code=404,
-                detail="Ticket not found for this conversation",
-            )
+            raise HTTPException(404, "Ticket not found for this conversation")
 
-        review = (
-            db.query(TicketResolutionReview)
-            .filter(
-                TicketResolutionReview.ticket_id == ticket_id,
-                TicketResolutionReview.company_id == company['id'],
-                TicketResolutionReview.approval_status == "approved",
-            )
-            .first()
-        )
+        review = db.query(TicketResolutionReview).filter(
+            TicketResolutionReview.ticket_id == ticket_id,
+            TicketResolutionReview.company_id == company["id"],
+            TicketResolutionReview.approval_status == "approved",
+        ).first()
 
         if not review:
-            raise HTTPException(
-                status_code=404,
-                detail="Approved historical solution not found",
-            )
+            raise HTTPException(404, "Approved historical solution not found")
 
-        solution = str(
-            data.get("approved_solution", "")
-        ).strip()
-
+        solution = str(data.get("approved_solution", "")).strip()
         if not solution:
-            raise HTTPException(
-                status_code=400,
-                detail="Solution cannot be empty",
-            )
+            raise HTTPException(400, "Solution cannot be empty")
 
         review.approved_solution = solution
-
         db.commit()
         db.refresh(review)
 
@@ -266,11 +260,9 @@ def update_historical_solution(
             "ticket_id": ticket_id,
             "approved_solution": review.approved_solution,
         }
-
     except Exception:
         db.rollback()
         raise
-
     finally:
         db.close()
 
@@ -280,60 +272,49 @@ def update_historical_solution(
 def delete_historical_solution(
     conversation_id: int,
     ticket_id: str,
+    chatbot_id: int | None = None,
     authorization: str = Header(default=None),
-    x_company_id: int = Header(default=None, alias='X-Company-ID')
+    x_company_id: int = Header(default=None, alias="X-Company-ID"),
+    agent_email: str = Header(default=None, alias="X-Agent-Email"),
 ):
     db = SessionLocal()
-
     try:
-        company = get_workspace_company(authorization, x_company_id, db)
+        company = get_request_company(db, authorization, x_company_id, agent_email)
 
         if not company:
-            raise HTTPException(
-                status_code=404,
-                detail="Company not found",
-            )
+            raise HTTPException(404, "Company not found")
 
-        conversation = get_conversation_for_company(
-            db, conversation_id, company
+        if agent_email:
+            conversation = db.query(Conversation).filter(
+                Conversation.id == conversation_id,
+                Conversation.company_id == company["id"],
+            ).first()
+        else:
+            if chatbot_id is None:
+                raise HTTPException(400, "chatbot_id is required")
+            conversation = get_conversation_for_company(
+                db, conversation_id, company, chatbot_id
             )
 
         if not conversation:
-            raise HTTPException(
-                status_code=404,
-                detail="Conversation not found",
-            )
+            raise HTTPException(404, "Conversation not found")
 
-        ticket = (
-            db.query(Ticket)
-            .filter(
-                Ticket.ticket_id == ticket_id,
-                Ticket.session_id == conversation.session_id,
-            )
-            .first()
-        )
+        ticket = db.query(Ticket).filter(
+            Ticket.ticket_id == ticket_id,
+            Ticket.session_id == conversation.session_id,
+        ).first()
 
         if not ticket:
-            raise HTTPException(
-                status_code=404,
-                detail="Ticket not found for this conversation",
-            )
+            raise HTTPException(404, "Ticket not found for this conversation")
 
-        review = (
-            db.query(TicketResolutionReview)
-            .filter(
-                TicketResolutionReview.ticket_id == ticket_id,
-                TicketResolutionReview.company_id == company['id'],
-                TicketResolutionReview.approval_status == "approved",
-            )
-            .first()
-        )
+        review = db.query(TicketResolutionReview).filter(
+            TicketResolutionReview.ticket_id == ticket_id,
+            TicketResolutionReview.company_id == company["id"],
+            TicketResolutionReview.approval_status == "approved",
+        ).first()
 
         if not review:
-            raise HTTPException(
-                status_code=404,
-                detail="Approved historical solution not found",
-            )
+            raise HTTPException(404, "Approved historical solution not found")
 
         db.delete(review)
         db.commit()
@@ -342,10 +323,9 @@ def delete_historical_solution(
             "message": "Historical solution deleted successfully.",
             "ticket_id": ticket_id,
         }
-
     except Exception:
         db.rollback()
         raise
-
     finally:
         db.close()
+

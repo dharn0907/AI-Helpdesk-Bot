@@ -2,6 +2,18 @@ import { useEffect, useMemo, useState } from "react";
 
 const API = "http://127.0.0.1:8000";
 
+function getAgentHeaders() {
+  const agent = JSON.parse(sessionStorage.getItem("agent") || "null");
+  if (!agent?.email || !agent?.company_id) {
+    throw new Error("Agent session or company not found. Please log in again.");
+  }
+  return {
+    "X-Agent-Email": agent.email,
+    "X-Company-ID": String(agent.company_id),
+  };
+}
+
+
 export default function HistoricalSolutions() {
   const [solutions, setSolutions] = useState([]);
   const [search, setSearch] = useState("");
@@ -19,7 +31,7 @@ export default function HistoricalSolutions() {
     setError("");
 
     try {
-      const response = await fetch(`${API}/historical-solutions/`);
+      const response = await fetch(`${API}/historical-solutions/`, { headers: getAgentHeaders() });
 
       if (!response.ok) {
         throw new Error("Failed to load historical solutions.");
@@ -100,6 +112,7 @@ export default function HistoricalSolutions() {
           method: "PATCH",
           headers: {
             "Content-Type": "application/json",
+            ...getAgentHeaders(),
           },
           body: JSON.stringify({
             approved_solution: draft.trim(),
@@ -152,6 +165,7 @@ export default function HistoricalSolutions() {
         `${API}/historical-solutions/${encodeURIComponent(ticketId)}`,
         {
           method: "DELETE",
+          headers: getAgentHeaders(),
         }
       );
 

@@ -2,6 +2,18 @@ import { useEffect, useMemo, useState } from "react";
 
 const API = "http://127.0.0.1:8000";
 
+function getAgentHeaders() {
+  const agent = JSON.parse(sessionStorage.getItem("agent") || "null");
+  if (!agent?.email || !agent?.company_id) {
+    throw new Error("Agent session or company not found. Please log in again.");
+  }
+  return {
+    "X-Agent-Email": agent.email,
+    "X-Company-ID": String(agent.company_id),
+  };
+}
+
+
 export default function HistoricalSolutionAttempts() {
   const [attempts, setAttempts] = useState([]);
   const [search, setSearch] = useState("");
@@ -15,7 +27,8 @@ export default function HistoricalSolutionAttempts() {
 
     try {
       const response = await fetch(
-        `${API}/historical-solution-attempts/`
+        `${API}/historical-solution-attempts/`,
+        { headers: getAgentHeaders() }
       );
 
       if (!response.ok) {

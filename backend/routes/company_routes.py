@@ -1,4 +1,4 @@
-﻿
+
 from fastapi import APIRouter, Depends, Header, HTTPException, Header
 from sqlalchemy import text
 
@@ -14,10 +14,11 @@ import os
 import re
 import secrets
 from sqlalchemy.orm import Session
+from services.company_smtp_service import encrypt_password, test_company_smtp
 
 from database.database import get_db
-from services.workspace_auth import get_workspace_company
-from database.models import Company, CompanyEmailVerification, Chatbot
+from services.workspace_auth import get_workspace_company, get_deletion_actor, record_deletion
+from database.models import Company, CompanyEmailVerification, Chatbot, OrganizationSettings, SupportEmailVerification
 from services.email_service import send_verification_email
 from services.company_service import (
     create_company,
@@ -329,7 +330,8 @@ def list_company_chatbots(db: Session = Depends(get_db),
         raise HTTPException(status_code=404, detail="Company not found")
 
     bots = db.query(Chatbot).filter(
-        Chatbot.organization_id == company['id']
+        Chatbot.organization_id == company['id'],
+        Chatbot.status != "inactive"
     ).order_by(Chatbot.id.desc()).all()
 
     return [{
@@ -431,9 +433,15 @@ def delete_company_chatbot(chatbot_id: int, db: Session = Depends(get_db),
     if not bot:
         raise HTTPException(status_code=404, detail="Chatbot not found")
 
-    bot.status = "inactive"
-    db.commit()
-    return {"success": True, "message": "Chatbot deactivated"}
+    if bot.status != "inactive":
+        actor_id = get_deletion_actor(authorization)
+        record_deletion(
+            db, "chatbot", bot.id, bot.bot_name,
+            company["id"], actor_id, "deactivated"
+        )
+        bot.status = "inactive"
+        db.commit()
+    return {"success": True, "message": "Chatbot deactivated and recorded"}
 
 
 # ============================================================
@@ -851,6 +859,20 @@ def multiuser_create_company(
     db: Session = Depends(get_db)
 ):
     _mu_setup(db)
+    db.execute(_mu_text("""
+        ALTER TABLE companies
+        ADD COLUMN IF NOT EXISTS owner_user_id BIGINT
+    """))
+    db.execute(_mu_text("""
+        UPDATE companies c
+        SET owner_user_id = (
+            SELECT m.user_id FROM company_memberships m
+            WHERE m.company_id = c.id
+            ORDER BY m.created_at ASC, m.id ASC
+            LIMIT 1
+        )
+        WHERE c.owner_user_id IS NULL
+    """))
     user = _mu_get_user(authorization, db)
     name = str(data.get("name") or "").strip()
 
@@ -873,11 +895,409 @@ def multiuser_create_company(
         VALUES (:uid, :cid)
         ON CONFLICT (user_id, company_id) DO NOTHING
     """), {"uid": user["id"], "cid": company.id})
+    db.execute(_mu_text("""
+        UPDATE companies SET owner_user_id = :uid WHERE id = :cid
+    """), {"uid": user["id"], "cid": company.id})
     db.commit()
 
     return {
         "id": company.id,
         "name": company.name,
         "slug": company.slug
+    }
+
+
+
+@router.delete("/current")
+def delete_current_company(
+    db: Session = Depends(get_db),
+    authorization: str = Header(default=None),
+    x_company_id: int = Header(default=None, alias="X-Company-ID"),
+):
+    company = get_workspace_company(authorization, x_company_id, db)
+    actor_id = get_deletion_actor(authorization)
+
+    db.execute(text("""
+        ALTER TABLE companies
+        ADD COLUMN IF NOT EXISTS owner_user_id BIGINT
+    """))
+    db.execute(text("""
+        UPDATE companies c
+        SET owner_user_id = (
+            SELECT m.user_id FROM company_memberships m
+            WHERE m.company_id = c.id
+            ORDER BY m.created_at ASC, m.id ASC
+            LIMIT 1
+        )
+        WHERE c.owner_user_id IS NULL
+    """))
+    owner_id = db.execute(text("""
+        SELECT owner_user_id FROM companies WHERE id = :cid
+    """), {"cid": company["id"]}).scalar()
+
+    if owner_id is None or int(owner_id) != actor_id:
+        raise HTTPException(403, "Only the company owner can delete this company.")
+
+    company_record = db.query(Company).filter(Company.id == company["id"]).first()
+    if not company_record:
+        raise HTTPException(404, "Company not found.")
+
+    record_deletion(
+        db, "company", company_record.id, company_record.name,
+        company_record.id, actor_id, "deactivated"
+    )
+    company_record.is_active = False
+    db.commit()
+    return {"success": True, "message": "Company deactivated and deletion recorded."}
+
+
+@router.get("/support-email")
+def get_support_email(
+    db: Session = Depends(get_db),
+    authorization: str = Header(default=None),
+    x_company_id: int = Header(default=None, alias="X-Company-ID"),
+):
+    company = get_workspace_company(authorization, x_company_id, db)
+    settings = db.query(OrganizationSettings).filter(
+        OrganizationSettings.organization_id == company["id"]
+    ).first()
+
+    return {
+        "support_email": settings.support_email if settings else None,
+        "verified": bool(settings and settings.support_email_verified),
+    }
+
+
+@router.post("/support-email")
+def set_support_email(
+    data: dict,
+    db: Session = Depends(get_db),
+    authorization: str = Header(default=None),
+    x_company_id: int = Header(default=None, alias="X-Company-ID"),
+):
+    company = get_workspace_company(authorization, x_company_id, db)
+    email = str(data.get("email") or "").strip().lower()
+
+    if len(email) > 320 or not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
+        raise HTTPException(400, "Enter a valid support email address.")
+
+    settings = db.query(OrganizationSettings).filter(
+        OrganizationSettings.organization_id == company["id"]
+    ).first()
+
+    if not settings:
+        settings = OrganizationSettings(organization_id=company["id"])
+        db.add(settings)
+
+    settings.support_email = email
+    settings.support_email_verified = False
+
+    db.query(SupportEmailVerification).filter(
+        SupportEmailVerification.company_id == company["id"],
+        SupportEmailVerification.verified_at.is_(None),
+    ).delete(synchronize_session=False)
+
+    raw_token = secrets.token_urlsafe(32)
+    verification = SupportEmailVerification(
+        company_id=company["id"],
+        email=email,
+        token_hash=hashlib.sha256(raw_token.encode()).hexdigest(),
+        expires_at=datetime.now(timezone.utc) + timedelta(hours=24),
+    )
+    db.add(verification)
+    db.commit()
+
+    backend_url = (
+        os.getenv("BACKEND_URL")
+        or os.getenv("API_BASE_URL")
+        or "http://127.0.0.1:8000"
+    ).rstrip("/")
+    verification_url = (
+        f"{backend_url}/companies/verify-support-email?token={raw_token}"
+    )
+
+    sent, message = send_verification_email(email, verification_url)
+    if not sent:
+        raise HTTPException(503, message)
+
+    return {
+        "message": "Verification link sent to the support email.",
+        "support_email": email,
+        "verified": False,
+    }
+
+
+@router.get("/verify-support-email")
+def verify_support_email(
+    token: str,
+    db: Session = Depends(get_db),
+):
+    token_hash = hashlib.sha256(token.encode()).hexdigest()
+    verification = db.query(SupportEmailVerification).filter(
+        SupportEmailVerification.token_hash == token_hash,
+        SupportEmailVerification.verified_at.is_(None),
+    ).first()
+
+    if not verification:
+        raise HTTPException(400, "Invalid or already-used verification link.")
+
+    expires_at = verification.expires_at
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+
+    if expires_at < datetime.now(timezone.utc):
+        raise HTTPException(400, "Verification link has expired.")
+
+    settings = db.query(OrganizationSettings).filter(
+        OrganizationSettings.organization_id == verification.company_id
+    ).first()
+
+    if not settings:
+        settings = OrganizationSettings(
+            organization_id=verification.company_id
+        )
+        db.add(settings)
+
+    settings.support_email = verification.email
+    settings.support_email_verified = True
+    verification.verified_at = datetime.now(timezone.utc)
+    db.commit()
+
+    return {
+        "message": "Support email verified successfully.",
+        "support_email": verification.email,
+        "verified": True,
+    }
+
+@router.get("/smtp-settings")
+def get_company_smtp_settings(
+    db: Session = Depends(get_db),
+    authorization: str = Header(default=None),
+    x_company_id: int = Header(default=None, alias="X-Company-ID"),
+):
+    company = get_workspace_company(authorization, x_company_id, db)
+
+    settings = db.query(OrganizationSettings).filter(
+        OrganizationSettings.organization_id == company["id"]
+    ).first()
+
+    smtp = (settings.settings or {}).get("smtp", {}) if settings else {}
+
+    return {
+        "host": smtp.get("host", ""),
+        "port": smtp.get("port", 587),
+        "username": smtp.get("username", ""),
+        "security": smtp.get("security", "starttls"),
+        "configured": bool(smtp.get("password_encrypted")),
+    }
+
+
+@router.post("/smtp-settings")
+def save_company_smtp_settings(
+    data: dict,
+    db: Session = Depends(get_db),
+    authorization: str = Header(default=None),
+    x_company_id: int = Header(default=None, alias="X-Company-ID"),
+):
+    company = get_workspace_company(authorization, x_company_id, db)
+
+    host = str(data.get("host") or "").strip()
+    username = str(data.get("username") or "").strip()
+    password = str(data.get("password") or "")
+    security = str(data.get("security") or "starttls").lower()
+
+    try:
+        port = int(data.get("port", 587))
+    except (ValueError, TypeError):
+        raise HTTPException(400, "Invalid SMTP port.")
+
+    if not host or not username or not password:
+        raise HTTPException(400, "SMTP host, username and password are required.")
+
+    if not 1 <= port <= 65535:
+        raise HTTPException(400, "SMTP port must be between 1 and 65535.")
+
+    if security not in ("ssl", "starttls"):
+        raise HTTPException(400, "Security must be SSL or STARTTLS.")
+
+    settings = db.query(OrganizationSettings).filter(
+        OrganizationSettings.organization_id == company["id"]
+    ).first()
+
+    if not settings:
+        settings = OrganizationSettings(organization_id=company["id"])
+        db.add(settings)
+
+    current_settings = dict(settings.settings or {})
+    current_settings["smtp"] = {
+        "host": host,
+        "port": port,
+        "username": username,
+        "password_encrypted": encrypt_password(password),
+        "security": security,
+    }
+
+    settings.settings = current_settings
+    db.commit()
+
+    return {
+        "message": "Company SMTP settings saved securely.",
+        "configured": True,
+    }
+
+
+@router.post("/smtp-settings/test")
+def test_saved_company_smtp(
+    db: Session = Depends(get_db),
+    authorization: str = Header(default=None),
+    x_company_id: int = Header(default=None, alias="X-Company-ID"),
+):
+    company = get_workspace_company(authorization, x_company_id, db)
+
+    settings = db.query(OrganizationSettings).filter(
+        OrganizationSettings.organization_id == company["id"]
+    ).first()
+
+    smtp = (settings.settings or {}).get("smtp", {}) if settings else {}
+
+    if not smtp.get("password_encrypted"):
+        raise HTTPException(400, "Save SMTP settings before testing.")
+
+    success, message = test_company_smtp(smtp)
+
+    if not success:
+        raise HTTPException(400, message)
+
+    return {"success": True, "message": message}
+
+# ------------------------------------------------
+# COMPANY SMTP SETTINGS
+# ------------------------------------------------
+
+@router.get("/smtp-settings")
+def get_company_smtp_settings(
+    db: Session = Depends(get_db),
+    authorization: str = Header(default=None),
+    x_company_id: int = Header(default=None, alias="X-Company-ID"),
+):
+    company = get_workspace_company(authorization, x_company_id, db)
+
+    settings = db.query(OrganizationSettings).filter(
+        OrganizationSettings.organization_id == company["id"]
+    ).first()
+
+    smtp = (settings.settings or {}).get("smtp", {}) if settings else {}
+
+    return {
+        "host": smtp.get("host", ""),
+        "port": smtp.get("port", 587),
+        "username": smtp.get("username", ""),
+        "security": smtp.get("security", "starttls"),
+        "configured": bool(smtp.get("password_encrypted")),
+    }
+
+
+@router.post("/smtp-settings")
+def save_company_smtp_settings(
+    data: dict,
+    db: Session = Depends(get_db),
+    authorization: str = Header(default=None),
+    x_company_id: int = Header(default=None, alias="X-Company-ID"),
+):
+    from services.smtp_credentials import encrypt_password
+
+    company = get_workspace_company(authorization, x_company_id, db)
+
+    host = str(data.get("host") or "").strip()
+    username = str(data.get("username") or "").strip()
+    password = str(data.get("password") or "")
+    security = str(data.get("security") or "starttls").strip().lower()
+
+    try:
+        port = int(data.get("port", 587))
+    except (TypeError, ValueError):
+        raise HTTPException(400, "SMTP port must be a number.")
+
+    if not host:
+        raise HTTPException(400, "SMTP host is required.")
+
+    if not username:
+        raise HTTPException(400, "SMTP username is required.")
+
+    if not 1 <= port <= 65535:
+        raise HTTPException(400, "SMTP port must be between 1 and 65535.")
+
+    if security not in ["starttls", "ssl"]:
+        raise HTTPException(400, "Security must be STARTTLS or SSL.")
+
+    organization_settings = db.query(OrganizationSettings).filter(
+        OrganizationSettings.organization_id == company["id"]
+    ).first()
+
+    if not organization_settings:
+        organization_settings = OrganizationSettings(
+            organization_id=company["id"],
+            settings={}
+        )
+        db.add(organization_settings)
+
+    company_settings = dict(organization_settings.settings or {})
+    smtp_config = dict(company_settings.get("smtp", {}))
+
+    # Keep the existing encrypted password if the password field is blank.
+    if password:
+        smtp_config["password_encrypted"] = encrypt_password(password)
+    elif not smtp_config.get("password_encrypted"):
+        raise HTTPException(400, "SMTP password is required.")
+
+    smtp_config.update({
+        "host": host,
+        "port": port,
+        "username": username,
+        "security": security,
+    })
+
+    company_settings["smtp"] = smtp_config
+    organization_settings.settings = company_settings
+
+    db.commit()
+
+    return {
+        "message": "Company SMTP settings saved successfully.",
+        "configured": True,
+        "host": host,
+        "port": port,
+        "username": username,
+        "security": security,
+    }
+
+
+@router.post("/smtp-settings/test")
+def test_saved_company_smtp(
+    db: Session = Depends(get_db),
+    authorization: str = Header(default=None),
+    x_company_id: int = Header(default=None, alias="X-Company-ID"),
+):
+    from services.smtp_credentials import test_company_smtp
+
+    company = get_workspace_company(authorization, x_company_id, db)
+
+    organization_settings = db.query(OrganizationSettings).filter(
+        OrganizationSettings.organization_id == company["id"]
+    ).first()
+
+    smtp_config = (
+        (organization_settings.settings or {}).get("smtp", {})
+        if organization_settings else {}
+    )
+
+    if not smtp_config.get("password_encrypted"):
+        raise HTTPException(400, "Save SMTP settings before testing.")
+
+    success, message = test_company_smtp(smtp_config)
+
+    return {
+        "success": success,
+        "message": message,
     }
 

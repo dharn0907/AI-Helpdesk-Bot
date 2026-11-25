@@ -20,10 +20,13 @@ from database.models import (
     TicketResolutionReview,
     OrganizationMember,
     TicketAssignment,
+    OrganizationSettings,
 )
-from services.workspace_auth import get_workspace_company
+from services.workspace_auth import get_workspace_company, get_deletion_actor, record_deletion
 from services.similar_ticket_service import find_similar_tickets
-from services.email_service import send_ticket_reply, send_company_otp
+from services.email_service import send_company_otp
+from services.company_smtp_service import send_company_ticket_reply
+from services.llm_service import llm
 from services.llm_service import llm
 
 
@@ -66,6 +69,25 @@ def get_active_chatbot(db, chatbot_id):
         )
 
     return chatbot, company
+
+
+def get_agent_company(db, email, company_id):
+    email = str(email or "").strip().lower()
+
+    if not email or not company_id:
+        raise HTTPException(401, "Agent email or company ID is missing.")
+
+    member = db.query(OrganizationMember).filter(
+        OrganizationMember.email == email,
+        OrganizationMember.organization_id == company_id,
+        OrganizationMember.role == "support_agent",
+        OrganizationMember.status == "approved",
+    ).first()
+
+    if not member:
+        raise HTTPException(401, "Approved agent membership not found for this company.")
+
+    return {"id": member.organization_id}
 
 
 def get_scoped_ticket(db, ticket_id, chatbot_id):
@@ -318,14 +340,24 @@ def get_company_agents(
 @router.get("/{ticket_id}")
 def get_ticket(
     ticket_id: str,
-    chatbot_id: int,
+    chatbot_id: int = None,
     db: Session = Depends(get_db),
     authorization: str = Header(default=None),
-    x_company_id: int = Header(default=None, alias="X-Company-ID")
+    x_company_id: int = Header(default=None, alias="X-Company-ID"),
+    agent_email: str = Header(default=None, alias='X-Agent-Email'),
 ):
 
-    company = get_workspace_company(authorization, x_company_id, db)
-    ticket = get_scoped_ticket(db, ticket_id, chatbot_id)
+    if agent_email:
+        company = get_agent_company(db, agent_email, x_company_id)
+        ticket = db.query(Ticket).filter(
+            Ticket.ticket_id == ticket_id,
+            Ticket.company_id == company["id"],
+        ).first()
+    else:
+        if chatbot_id is None:
+            raise HTTPException(422, "chatbot_id is required.")
+        company = get_workspace_company(authorization, x_company_id, db)
+        ticket = get_scoped_ticket(db, ticket_id, chatbot_id)
 
     if ticket and ticket.company_id != company['id']:
         raise HTTPException(404, 'Ticket not found.')
@@ -339,30 +371,39 @@ def get_ticket(
     return ticket
 
 
+
+
 @router.patch("/{ticket_id}")
 def update_ticket(
     ticket_id: str,
     data: dict,
-    chatbot_id: int,
+    chatbot_id: int = None,
     db: Session = Depends(get_db),
     authorization: str = Header(default=None),
-    x_company_id: int = Header(default=None, alias="X-Company-ID")
+    x_company_id: int = Header(default=None, alias="X-Company-ID"),
+    agent_email: str = Header(default=None, alias='X-Agent-Email'),
 ):
+    from services.smtp_credentials import send_company_ticket_reply
 
-    company = get_workspace_company(authorization, x_company_id, db)
-    ticket = get_scoped_ticket(db, ticket_id, chatbot_id)
+    if agent_email:
+        company = get_agent_company(db, agent_email, x_company_id)
+        ticket = db.query(Ticket).filter(
+            Ticket.ticket_id == ticket_id,
+            Ticket.company_id == company["id"],
+        ).first()
+    else:
+        if chatbot_id is None:
+            raise HTTPException(422, "chatbot_id is required.")
+        company = get_workspace_company(authorization, x_company_id, db)
+        ticket = get_scoped_ticket(db, ticket_id, chatbot_id)
 
-    if ticket and ticket.company_id != company['id']:
-        raise HTTPException(404, 'Ticket not found.')
-
-    if not ticket:
+    if not ticket or ticket.company_id != company["id"]:
         raise HTTPException(
             status_code=404,
-            detail="Ticket not found.",
+            detail="Ticket not found."
         )
 
     if "status" in data:
-
         allowed_statuses = [
             "Open",
             "In Progress",
@@ -371,10 +412,7 @@ def update_ticket(
         ]
 
         if data["status"] not in allowed_statuses:
-            raise HTTPException(
-                status_code=400,
-                detail="Invalid ticket status.",
-            )
+            raise HTTPException(400, "Invalid ticket status.")
 
         ticket.status = data["status"]
 
@@ -382,26 +420,44 @@ def update_ticket(
     email_message = "No email was sent."
 
     if "agent_reply" in data:
-
         agent_reply = str(data["agent_reply"]).strip()
 
         if not agent_reply:
-            raise HTTPException(
-                status_code=400,
-                detail="Agent reply cannot be empty.",
-            )
+            raise HTTPException(400, "Agent reply cannot be empty.")
 
         ticket.agent_reply = agent_reply
 
         db.commit()
         db.refresh(ticket)
 
-        email_sent, email_message = send_ticket_reply(
-            customer_email=ticket.customer_email,
-            ticket_id=ticket.ticket_id,
-            customer_message=ticket.customer_message,
-            agent_reply=agent_reply,
-        )
+        organization_settings = db.query(OrganizationSettings).filter(
+            OrganizationSettings.organization_id == ticket.company_id
+        ).first()
+
+        if (
+            not organization_settings
+            or not organization_settings.support_email_verified
+        ):
+            email_sent = False
+            email_message = "Company support email is not verified."
+
+        else:
+            company_settings = organization_settings.settings or {}
+            smtp_config = company_settings.get("smtp", {})
+
+            if not smtp_config.get("password_encrypted"):
+                email_sent = False
+                email_message = "Company SMTP is not configured."
+
+            else:
+                email_sent, email_message = send_company_ticket_reply(
+                    config=smtp_config,
+                    support_email=organization_settings.support_email,
+                    customer_email=ticket.customer_email,
+                    ticket_id=ticket.ticket_id,
+                    customer_message=ticket.customer_message,
+                    agent_reply=agent_reply,
+                )
 
     else:
         db.commit()
@@ -421,14 +477,24 @@ def update_ticket(
 def review_ticket_resolution(
     ticket_id: str,
     data: dict,
-    chatbot_id: int,
+    chatbot_id: int = None,
     db: Session = Depends(get_db),
     authorization: str = Header(default=None),
-    x_company_id: int = Header(default=None, alias='X-Company-ID')
+    x_company_id: int = Header(default=None, alias='X-Company-ID'),
+    agent_email: str = Header(default=None, alias='X-Agent-Email'),
 ):
 
-    company = get_workspace_company(authorization, x_company_id, db)
-    ticket = get_scoped_ticket(db, ticket_id, chatbot_id)
+    if agent_email:
+        company = get_agent_company(db, agent_email, x_company_id)
+        ticket = db.query(Ticket).filter(
+            Ticket.ticket_id == ticket_id,
+            Ticket.company_id == company["id"],
+        ).first()
+    else:
+        if chatbot_id is None:
+            raise HTTPException(422, "chatbot_id is required.")
+        company = get_workspace_company(authorization, x_company_id, db)
+        ticket = get_scoped_ticket(db, ticket_id, chatbot_id)
 
     if ticket and ticket.company_id != company['id']:
         raise HTTPException(404, 'Ticket not found.')
@@ -523,14 +589,24 @@ def review_ticket_resolution(
 @router.get("/{ticket_id}/resolution-review")
 def get_ticket_resolution_review(
     ticket_id: str,
-    chatbot_id: int,
+    chatbot_id: int = None,
     db: Session = Depends(get_db),
     authorization: str = Header(default=None),
-    x_company_id: int = Header(default=None, alias='X-Company-ID')
+    x_company_id: int = Header(default=None, alias='X-Company-ID'),
+    agent_email: str = Header(default=None, alias='X-Agent-Email'),
 ):
 
-    company = get_workspace_company(authorization, x_company_id, db)
-    ticket = get_scoped_ticket(db, ticket_id, chatbot_id)
+    if agent_email:
+        company = get_agent_company(db, agent_email, x_company_id)
+        ticket = db.query(Ticket).filter(
+            Ticket.ticket_id == ticket_id,
+            Ticket.company_id == company["id"],
+        ).first()
+    else:
+        if chatbot_id is None:
+            raise HTTPException(422, "chatbot_id is required.")
+        company = get_workspace_company(authorization, x_company_id, db)
+        ticket = get_scoped_ticket(db, ticket_id, chatbot_id)
 
     if ticket and ticket.company_id != company['id']:
         raise HTTPException(404, 'Ticket not found.')
@@ -569,14 +645,24 @@ def get_ticket_resolution_review(
 def summarize_ticket(
     ticket_id: str,
     data: dict,
-    chatbot_id: int,
+    chatbot_id: int = None,
     db: Session = Depends(get_db),
     authorization: str = Header(default=None),
-    x_company_id: int = Header(default=None, alias='X-Company-ID')
+    x_company_id: int = Header(default=None, alias='X-Company-ID'),
+    agent_email: str = Header(default=None, alias='X-Agent-Email'),
 ):
 
-    company = get_workspace_company(authorization, x_company_id, db)
-    ticket = get_scoped_ticket(db, ticket_id, chatbot_id)
+    if agent_email:
+        company = get_agent_company(db, agent_email, x_company_id)
+        ticket = db.query(Ticket).filter(
+            Ticket.ticket_id == ticket_id,
+            Ticket.company_id == company["id"],
+        ).first()
+    else:
+        if chatbot_id is None:
+            raise HTTPException(422, "chatbot_id is required.")
+        company = get_workspace_company(authorization, x_company_id, db)
+        ticket = get_scoped_ticket(db, ticket_id, chatbot_id)
 
     if ticket and ticket.company_id != company['id']:
         raise HTTPException(404, 'Ticket not found.')
@@ -733,15 +819,25 @@ Return the JSON object.
 @router.get("/{ticket_id}/similar")
 def get_similar_tickets(
     ticket_id: str,
-    chatbot_id: int,
+    chatbot_id: int = None,
     db: Session = Depends(get_db),
     authorization: str = Header(default=None),
-    x_company_id: int = Header(default=None, alias='X-Company-ID')
+    x_company_id: int = Header(default=None, alias='X-Company-ID'),
+    agent_email: str = Header(default=None, alias='X-Agent-Email'),
 ):
     """Find similar tickets belonging to the same chatbot."""
 
-    company = get_workspace_company(authorization, x_company_id, db)
-    ticket = get_scoped_ticket(db, ticket_id, chatbot_id)
+    if agent_email:
+        company = get_agent_company(db, agent_email, x_company_id)
+        ticket = db.query(Ticket).filter(
+            Ticket.ticket_id == ticket_id,
+            Ticket.company_id == company["id"],
+        ).first()
+    else:
+        if chatbot_id is None:
+            raise HTTPException(422, "chatbot_id is required.")
+        company = get_workspace_company(authorization, x_company_id, db)
+        ticket = get_scoped_ticket(db, ticket_id, chatbot_id)
 
     if ticket and ticket.company_id != company['id']:
         raise HTTPException(404, 'Ticket not found.')
@@ -764,3 +860,31 @@ def get_similar_tickets(
         )
 
     return result
+
+
+@router.delete("/agents/{agent_id}")
+def revoke_support_agent(
+    agent_id: int,
+    db: Session = Depends(get_db),
+    authorization: str = Header(default=None),
+    x_company_id: int = Header(default=None, alias="X-Company-ID"),
+):
+    company = get_workspace_company(authorization, x_company_id, db)
+    actor_id = get_deletion_actor(authorization)
+
+    member = db.query(OrganizationMember).filter(
+        OrganizationMember.id == agent_id,
+        OrganizationMember.organization_id == company["id"],
+        OrganizationMember.role == "support_agent",
+    ).first()
+
+    if not member:
+        raise HTTPException(404, "Support agent not found.")
+
+    record_deletion(
+        db, "support_agent", member.id, member.email,
+        company["id"], actor_id, "revoked"
+    )
+    member.status = "revoked"
+    db.commit()
+    return {"success": True, "message": "Support agent access revoked."}

@@ -49,15 +49,14 @@ from database.models import (
     HistoricalSolutionAttempt,
 )
 
-def _get_active_company_config():
-    """Load the active company's saved bot instructions for domain validation."""
+def _get_active_company_config(company_id=None):
+    """Load the correct active company's saved bot instructions."""
     db = SessionLocal()
     try:
-        company = (
-            db.query(Company)
-            .filter(Company.is_active.is_(True))
-            .first()
-        )
+        q = db.query(Company).filter(Company.is_active.is_(True))
+        if company_id is not None:
+            q = q.filter(Company.id == company_id)
+        company = q.first()
         if not company:
             return None
 
@@ -84,8 +83,8 @@ def _get_active_company_config():
         db.close()
 
 
-def _check_company_domain(issue_text, conversation_history=None):
-    config = _get_active_company_config()
+def _check_company_domain(issue_text, conversation_history=None, company_id=None):
+    config = _get_active_company_config(company_id)
     if not config:
         return {"decision": "UNCERTAIN", "reason": "Company configuration unavailable"}
 
@@ -113,7 +112,8 @@ def generate_llm_response(
     customer_message: str,
     intent: str = "general_enquiry",
     context: str = "",
-    conversation_history: list = None
+    conversation_history: list = None,
+    company_id=None
 ) -> str:
     """
     Generate a response using company configuration and relevant
@@ -131,11 +131,10 @@ def generate_llm_response(
     knowledge_context = ""
 
     try:
-        company = (
-            db.query(Company)
-            .filter(Company.is_active.is_(True))
-            .first()
-        )
+        q = db.query(Company).filter(Company.is_active.is_(True))
+        if company_id is not None:
+            q = q.filter(Company.id == company_id)
+        company = q.first()
 
         if company:
             configuration = (
@@ -1304,7 +1303,7 @@ def chat(data: dict):
 
         try:
             thread_uuid, zep_memory_context = start_user_turn(
-                company_id="active_company",
+                company_id=company_id,
                 customer_id=customer_id,
                 session_id=session_id,
                 user_message=user_message,
@@ -1635,20 +1634,64 @@ def chat(data: dict):
             "issue_summary",
             pending_ticket.get("original_complaint") or "",
         )
+        # Keep the explicit human-support request counter internal.
+        # Never expose the count or the escalation rule to the customer.
+        if (
+            current_step == "additional_details"
+            and semantic_human_request
+            and not state.get("human_escalation_triggered")
+        ):
+            escalation_count = int(state.get("human_escalation_count") or 0) + 1
+            state["human_escalation_count"] = escalation_count
 
-        # --------------------------------------------
-        # A. Collect and interpret issue details
-        # --------------------------------------------
+            issue_context = " ".join([
+                str(pending_ticket.get("original_complaint") or ""),
+                str(pending_ticket.get("issue_summary") or ""),
+                str(pending_ticket.get("additional_details") or ""),
+            ]).lower()
 
-        if current_step == "additional_details":
+            if "payment" in issue_context and ("404" in issue_context or "error" in issue_context):
+                follow_up = (
+                    "At which step of the payment process does the 404 error appear?"
+                )
+            else:
+                follow_up = (
+                    "Could you share a little more information about the issue "
+                    "so our support team can assist you properly?"
+                )
 
+            if escalation_count < 3:
+                reply = (
+                    "I can help arrange human support. "
+                    "To make sure the team understands the problem, "
+                    + follow_up
+                )
+            else:
+                # Third explicit request: move into completing the issue details.
+                state["human_escalation_triggered"] = True
+                pending_ticket["human_support_requested"] = True
+                reply = (
+                    "Certainly. I'll prepare your request for the support team. "
+                    "Before I proceed, I just need one more detail: "
+                    + follow_up
+                )
+
+            return _save_and_return(
+                state,
+                history,
+                user_message,
+                reply,
+                ticket_created=False,
+                awaiting_additional_details=True,
+                conversation_status="collecting_additional_details",
+            )
             # A human was requested before the customer described the issue.
             if (
                 not pending_ticket.get("original_complaint")
                 and not pending_ticket.get("detail_messages")
                 and not pending_ticket.get("additional_details")
             ):
-                domain_result = _check_company_domain(user_message, history)
+                domain_result = _check_company_domain(user_message, history, state.get("company_id"))
                 domain_decision = domain_result.get("decision", "UNCERTAIN")
                 print("COMPANY DOMAIN DECISION:", domain_decision, domain_result.get("reason", ""))
 
@@ -1917,6 +1960,7 @@ def chat(data: dict):
                                     "Do not mention internal AI processes."
                                 ),
                                 conversation_history=history,
+                                company_id=state.get("company_id"),
                             )
 
                             reply = (reply or "").strip()
@@ -1980,6 +2024,7 @@ def chat(data: dict):
                             "have already been answered."
                         ),
                         conversation_history=history,
+                        company_id=state.get("company_id"),
                     )
                     reply = (reply or "").strip()
                     if not reply:
@@ -2211,6 +2256,7 @@ def chat(data: dict):
                         "or claim a ticket was created."
                     ),
                     conversation_history=history,
+                    company_id=state.get("company_id"),
                 )
                 reply = (reply or "").strip()
                 if not reply:
@@ -2548,9 +2594,22 @@ def chat(data: dict):
         # --------------------------------------------
 
         if current_step == "customer_email":
+            email = user_message.strip()
+
+            # Always recognize a valid email before interpreting intent.
+            if valid_email(email):
+                pending_ticket["customer_email"] = email
+
+                return _finish_ticket_creation(
+                    state,
+                    history,
+                    user_message,
+                    session_id,
+                    pending_ticket,
+                )
+
             if semantic_human_request:
                 reply = (
-                    "I understand that you want to speak with a human. "
                     "Your support request is ready for human follow-up. "
                     "Please provide your email address so the support team "
                     "can contact you."
@@ -2565,35 +2624,21 @@ def chat(data: dict):
                     conversation_status="collecting_customer_email",
                 )
 
-            email = user_message.strip()
+            reply = (
+                "That doesn't appear to be a valid email address. "
+                "Please enter a valid email address."
+            )
 
-            if not valid_email(email):
-                reply = (
-                    "That doesn't appear to be a valid email address. "
-                    "Please enter a valid email address."
-                )
-
-                return _save_and_return(
-                    state,
-                    history,
-                    user_message,
-                    reply,
-                    ticket_created=False,
-                    awaiting_email=True,
-                    conversation_status="collecting_customer_email",
-                )
-
-            pending_ticket["customer_email"] = email
-
-            return _finish_ticket_creation(
+            return _save_and_return(
                 state,
                 history,
                 user_message,
-                session_id,
-                pending_ticket,
+                reply,
+                ticket_created=False,
+                awaiting_email=True,
+                conversation_status="collecting_customer_email",
             )
-    
-    
+
     # STEP 3: UNIVERSAL FIRST-LEVEL INTENT CLASSIFICATION
     # ------------------------------------------------
 
@@ -2890,6 +2935,7 @@ def chat(data: dict):
                 intent=response_intent,
                 context=business_context,
                 conversation_history=history,
+                company_id=state.get("company_id"),
             )
         except Exception as exc:
             print(f"Gemini response generation failed: {exc}")
@@ -2927,7 +2973,7 @@ def chat(data: dict):
         state["issue_messages"] = state["issue_messages"][-8:]
         issue_text = " ".join(state["issue_messages"])
 
-        domain_result = _check_company_domain(issue_text, history)
+        domain_result = _check_company_domain(issue_text, history, state.get("company_id"))
         domain_decision = domain_result.get("decision", "UNCERTAIN")
         print("COMPANY DOMAIN DECISION:", domain_decision, domain_result.get("reason", ""))
 
@@ -2996,7 +3042,7 @@ def chat(data: dict):
                 response_source="ticket_information_collection",
             )
 
-        domain_result = _check_company_domain(issue_text, history)
+        domain_result = _check_company_domain(issue_text, history, state.get("company_id"))
         domain_decision = domain_result.get("decision", "UNCERTAIN")
         print("COMPANY DOMAIN DECISION:", domain_decision, domain_result.get("reason", ""))
 
@@ -3096,6 +3142,7 @@ def chat(data: dict):
                 intent=intent,
                 context=opening_context,
                 conversation_history=history,
+                company_id=state.get("company_id"),
             )
 
             if not opening_reply or not opening_reply.strip():
@@ -3141,6 +3188,7 @@ def chat(data: dict):
             intent=intent,
             context=context,
             conversation_history=history,
+            company_id=state.get("company_id"),
         )
         source = "gemini_llm"
 

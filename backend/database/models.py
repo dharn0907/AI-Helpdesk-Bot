@@ -77,6 +77,18 @@ class CompanyEmailVerification(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
+class SupportEmailVerification(Base):
+    __tablename__ = "support_email_verifications"
+
+    id = Column(Integer, primary_key=True, index=True)
+    company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
+    email = Column(String(320), nullable=False)
+    token_hash = Column(String(64), unique=True, nullable=False, index=True)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    verified_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
 class BotConfiguration(Base):
 
     __tablename__ = "bot_configurations"

@@ -50,6 +50,18 @@ export default function AdminDashboard({ onBack, session, chatbot }) {
   const [dashboardLoading, setDashboardLoading] = useState(false);
   const [detailsLoading, setDetailsLoading] = useState(false);
   const [dashboardError, setDashboardError] = useState("");
+  const [supportEmail, setSupportEmail] = useState("");
+  const [supportEmailVerified, setSupportEmailVerified] = useState(false);
+  const [supportEmailLoading, setSupportEmailLoading] = useState(false);
+  const [supportEmailMessage, setSupportEmailMessage] = useState("");
+  const [smtpHost, setSmtpHost] = useState("smtp.gmail.com");
+  const [smtpPort, setSmtpPort] = useState("587");
+  const [smtpUsername, setSmtpUsername] = useState("");
+  const [smtpPassword, setSmtpPassword] = useState("");
+  const [smtpSecurity, setSmtpSecurity] = useState("starttls");
+  const [smtpConfigured, setSmtpConfigured] = useState(false);
+  const [smtpLoading, setSmtpLoading] = useState(false);
+  const [smtpMessage, setSmtpMessage] = useState("");
 
 
   const headers = (extra = {}) => ({
@@ -69,6 +81,99 @@ export default function AdminDashboard({ onBack, session, chatbot }) {
     return data;
   };
 
+  const loadSupportEmail = async () => {
+    const response = await fetch(`${API}/companies/support-email`, {
+      headers: headers()
+    });
+    const data = await readResponse(response);
+    setSupportEmail(data.support_email || "");
+    setSupportEmailVerified(Boolean(data.verified));
+  };
+
+  const saveSupportEmail = async (event) => {
+    event.preventDefault();
+    if (!supportEmail.trim()) return;
+
+    setSupportEmailLoading(true);
+    setSupportEmailMessage("");
+
+    try {
+      const response = await fetch(`${API}/companies/support-email`, {
+        method: "POST",
+        headers: headers(),
+        body: JSON.stringify({ email: supportEmail.trim() })
+      });
+
+      const data = await readResponse(response);
+      setSupportEmailVerified(false);
+      setSupportEmailMessage(
+        data.message || "Verification email sent. Check your inbox."
+      );
+    } catch (err) {
+      setSupportEmailMessage(err.message || "Could not save support email.");
+    } finally {
+      setSupportEmailLoading(false);
+    }
+  };
+  const loadSmtpSettings = async () => {
+    const response = await fetch(`${API}/companies/smtp-settings`, {
+      headers: headers()
+    });
+    const data = await readResponse(response);
+
+    setSmtpHost(data.host || "");
+    setSmtpPort(String(data.port || 587));
+    setSmtpUsername(data.username || "");
+    setSmtpSecurity(data.security || "starttls");
+    setSmtpConfigured(Boolean(data.configured));
+  };
+
+  const saveSmtpSettings = async () => {
+    setSmtpLoading(true);
+    setSmtpMessage("");
+
+    try {
+      const response = await fetch(`${API}/companies/smtp-settings`, {
+        method: "POST",
+        headers: headers(),
+        body: JSON.stringify({
+          host: smtpHost,
+          port: Number(smtpPort),
+          username: smtpUsername,
+          password: smtpPassword,
+          security: smtpSecurity
+        })
+      });
+
+      const data = await readResponse(response);
+      setSmtpConfigured(true);
+      setSmtpPassword("");
+      setSmtpMessage(data.message || "SMTP settings saved.");
+    } catch (error) {
+      setSmtpMessage(error.message);
+    } finally {
+      setSmtpLoading(false);
+    }
+  };
+
+  const testSmtpConnection = async () => {
+    setSmtpLoading(true);
+    setSmtpMessage("");
+
+    try {
+      const response = await fetch(`${API}/companies/smtp-settings/test`, {
+        method: "POST",
+        headers: headers()
+      });
+
+      const data = await readResponse(response);
+      setSmtpMessage(data.message);
+    } catch (error) {
+      setSmtpMessage(error.message);
+    } finally {
+      setSmtpLoading(false);
+    }
+  };
   const loadKnowledgeFiles = async () => {
     const response = await fetch(`${API}/knowledge-base/files`, {
       headers: headers()
@@ -90,6 +195,8 @@ export default function AdminDashboard({ onBack, session, chatbot }) {
       setCompanyId(data.company_id);
       setCompanyName(data.company_name);
       setConfig({ ...emptyConfig, ...data.configuration });
+      await loadSupportEmail();
+      await loadSmtpSettings();
 
       await loadKnowledgeFiles();
 
@@ -182,6 +289,55 @@ export default function AdminDashboard({ onBack, session, chatbot }) {
       await loadBotData();
     } catch (err) {
       setAgentError(err.message);
+    }
+  };
+
+
+  const deleteSupportAgent = async (agent) => {
+    if (!window.confirm(`Revoke access for ${agent.name || agent.email}? Their ticket history will be kept.`)) return;
+    setAgentError("");
+    setAgentMessage("");
+    try {
+      const response = await fetch(`${API}/tickets/agents/${agent.id}`, {
+        method: "DELETE",
+        headers: headers(),
+      });
+      const data = await readResponse(response);
+      setAgentMessage(data.message || "Agent access revoked.");
+      await loadBotData();
+    } catch (err) {
+      setAgentError(err.message);
+    }
+  };
+
+  const deleteSelectedChatbot = async () => {
+    if (!chatbot?.id || !window.confirm(`Deactivate chatbot "${chatbot.bot_name || "this chatbot"}"?`)) return;
+    try {
+      const response = await fetch(`${API}/companies/current/chatbots/${chatbot.id}`, {
+        method: "DELETE",
+        headers: headers(),
+      });
+      const data = await readResponse(response);
+      window.alert(data.message || "Chatbot deactivated.");
+      onBack();
+    } catch (err) {
+      window.alert(err.message);
+    }
+  };
+
+  const deleteCompanyAccount = async () => {
+    if (!window.confirm("Deactivate this entire company account? All bots and agent access will stop. Existing records and audit history will be retained.")) return;
+    if (!window.confirm("Final confirmation: are you sure you want to deactivate this company?")) return;
+    try {
+      const response = await fetch(`${API}/companies/current`, {
+        method: "DELETE",
+        headers: headers(),
+      });
+      const data = await readResponse(response);
+      window.alert(data.message || "Company deactivated.");
+      onBack();
+    } catch (err) {
+      window.alert(err.message);
     }
   };
 
@@ -296,7 +452,10 @@ export default function AdminDashboard({ onBack, session, chatbot }) {
 
       const response = await fetch(`${API}/knowledge-base/upload`, {
         method: "POST",
-        headers: headers(),
+        headers: {
+          Authorization: `Bearer ${session.token}`,
+          "X-Company-ID": String(session.company.id)
+        },
         body: formData
       });
 
@@ -408,6 +567,14 @@ export default function AdminDashboard({ onBack, session, chatbot }) {
           >
             Back to Customer Chat
           </button>
+          <button type="button" onClick={deleteSelectedChatbot}
+            style={{ marginLeft: 8, background: "#dc2626", color: "#fff", border: 0, borderRadius: 6, padding: "9px 13px", cursor: "pointer" }}>
+            Delete Chatbot
+          </button>
+          <button type="button" onClick={deleteCompanyAccount}
+            style={{ marginLeft: 8, background: "#991b1b", color: "#fff", border: 0, borderRadius: 6, padding: "9px 13px", cursor: "pointer" }}>
+            Delete Company
+          </button>
         </header>
 
         <section style={{ marginBottom: 26, padding: 20, background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12 }}>
@@ -505,6 +672,12 @@ export default function AdminDashboard({ onBack, session, chatbot }) {
                       Approval: <strong>{agent.status === "approved" ? "Approved" : "Pending"}</strong>
                     </div>
                     <div style={{ fontSize: 12, color: "#64748b" }}>Status: {agent.status}</div>
+                    {agent.status !== "revoked" && (
+                      <button type="button" onClick={() => deleteSupportAgent(agent)}
+                        style={{ marginTop: 10, background: "#dc2626", color: "#fff", border: 0, borderRadius: 6, padding: "7px 11px", cursor: "pointer" }}>
+                        Delete Agent
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>
@@ -626,6 +799,168 @@ export default function AdminDashboard({ onBack, session, chatbot }) {
               </p>
             </section>
 
+            <section style={{
+              background: "#fff",
+              padding: 22,
+              borderRadius: 12,
+              marginBottom: 18
+            }}>
+              <h2 style={{ fontSize: 19, marginTop: 0 }}>
+                Company Support Email
+              </h2>
+
+              <p style={{ color: "#6b7280", fontSize: 13 }}>
+                Customers can reply to ticket emails using this verified company support address.
+              </p>
+
+              <form onSubmit={saveSupportEmail}>
+                <label style={{
+                  display: "block",
+                  fontWeight: 600,
+                  fontSize: 14,
+                  marginBottom: 7
+                }}>
+                  Support Email Address
+                </label>
+
+                <input
+                  type="email"
+                  value={supportEmail}
+                  onChange={(e) => {
+                    setSupportEmail(e.target.value);
+                    setSupportEmailVerified(false);
+                    setSupportEmailMessage("");
+                  }}
+                  placeholder="support@yourcompany.com"
+                  required
+                  style={{ ...inputStyle, marginBottom: 12 }}
+                />
+
+                <div style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  flexWrap: "wrap"
+                }}>
+                  <button type="submit" disabled={supportEmailLoading}
+                    style={buttonStyle}>
+                    {supportEmailLoading ? "Sending..." : "Save & Send Verification"}
+                  </button>
+
+                  <span style={{
+                    fontSize: 13,
+                    fontWeight: 600,
+                    color: supportEmailVerified ? "#15803d" : "#b45309"
+                  }}>
+                    {supportEmailVerified ? "Verified" : "Not verified"}
+                  </span>
+                </div>
+
+                {supportEmailMessage && (
+                  <p style={{ fontSize: 13, color: "#2563eb", marginBottom: 0 }}>
+                    {supportEmailMessage}
+                  </p>
+                )}
+              </form>
+            </section>
+            <section style={{
+              background: "#ffffff",
+              border: "1px solid #e5e7eb",
+              borderRadius: 10,
+              padding: 20,
+              marginBottom: 18
+            }}>
+              <h2 style={{ fontSize: 19, marginTop: 0 }}>
+                Company SMTP Settings
+              </h2>
+
+              <p style={{ color: "#6b7280", fontSize: 13 }}>
+                Configure your company's email server. Ticket replies will be sent using these credentials.
+              </p>
+
+              <input
+                value={smtpHost}
+                onChange={(e) => setSmtpHost(e.target.value)}
+                placeholder="SMTP Host (example: smtp.gmail.com)"
+                style={{ ...inputStyle, marginBottom: 12 }}
+              />
+
+              <input
+                type="number"
+                value={smtpPort}
+                onChange={(e) => setSmtpPort(e.target.value)}
+                placeholder="SMTP Port (587)"
+                style={{ ...inputStyle, marginBottom: 12 }}
+              />
+
+              <input
+                value={smtpUsername}
+                onChange={(e) => setSmtpUsername(e.target.value)}
+                placeholder="SMTP Username / Email"
+                style={{ ...inputStyle, marginBottom: 12 }}
+              />
+
+              <input
+                type="password"
+                value={smtpPassword}
+                onChange={(e) => setSmtpPassword(e.target.value)}
+                placeholder={smtpConfigured ? "Password saved (leave blank to keep it)" : "SMTP Password / App Password"}
+                style={{ ...inputStyle, marginBottom: 12 }}
+              />
+
+              <select
+                value={smtpSecurity}
+                onChange={(e) => setSmtpSecurity(e.target.value)}
+                style={{ ...inputStyle, marginBottom: 12 }}
+              >
+                <option value="starttls">STARTTLS (usually port 587)</option>
+                <option value="ssl">SSL (usually port 465)</option>
+              </select>
+
+              <p style={{ fontSize: 12, color: "#6b7280" }}>
+                {smtpConfigured ? "SMTP credentials are saved. Enter a new password only if you want to change it." : "SMTP credentials have not been configured yet."}
+              </p>
+
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                <button
+                  type="button"
+                  disabled={smtpLoading}
+                  onClick={saveSmtpSettings}
+                  style={{
+                    padding: "10px 18px",
+                    background: "#2563eb",
+                    color: "#ffffff",
+                    border: "none",
+                    borderRadius: 6,
+                    cursor: "pointer"
+                  }}
+                >
+                  {smtpLoading ? "Please wait..." : "Save SMTP Settings"}
+                </button>
+
+                <button
+                  type="button"
+                  disabled={smtpLoading || !smtpConfigured}
+                  onClick={testSmtpConnection}
+                  style={{
+                    padding: "10px 18px",
+                    background: "#059669",
+                    color: "#ffffff",
+                    border: "none",
+                    borderRadius: 6,
+                    cursor: "pointer"
+                  }}
+                >
+                  Test SMTP Connection
+                </button>
+              </div>
+
+              {smtpMessage && (
+                <p style={{ fontSize: 13, marginTop: 12, color: "#2563eb" }}>
+                  {smtpMessage}
+                </p>
+              )}
+            </section>
             <form onSubmit={saveConfiguration}>
               <section style={{
                 background: "#fff",
