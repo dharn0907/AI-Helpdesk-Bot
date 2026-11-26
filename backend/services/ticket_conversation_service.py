@@ -102,6 +102,17 @@ The customer wants to continue later.
 CANCEL:
 The customer clearly does not want to proceed with the support request.
 
+CRITICAL CANCELLATION DISTINCTION:
+- CANCEL applies ONLY when the customer withdraws the support request itself.
+- A cancelled order, shipment, delivery, booking, subscription, payment,
+  transaction, or product is a customer complaint detail, NOT a request
+  to cancel the support request.
+- Messages such as "my order was cancelled", "shipment got cancelled",
+  "payment was cancelled", or "the booking was cancelled" MUST be ADD_DETAIL
+  when they describe the customer's problem.
+- When unsure whether the customer means the support request or an
+  underlying order/service, do NOT cancel. Ask one short clarification.
+
 UNCERTAIN:
 The meaning is genuinely unclear.
 
