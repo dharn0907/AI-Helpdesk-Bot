@@ -48,7 +48,6 @@ from database.models import (
     ConversationMessage,
     HistoricalSolutionFeedback,
     HistoricalSolutionAttempt,
-    PendingTicketWorkflow,
 )
 
 def _get_active_company_config(company_id=None):
