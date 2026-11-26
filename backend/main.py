@@ -2071,7 +2071,7 @@ def chat(data: dict):
             return _finish_ticket_creation(state, history, user_message, session_id, pending_ticket)
         value = user_message.strip()
         field_type = field.get("type", "text")
-        if field_type == "email":
+        if field_type == "email" or field_key == "email":
             if not valid_email(value):
                 return _save_and_return(state, history, user_message, "That doesn't look like a valid email address. Could you check it and send it again?", ticket_created=False, awaiting_custom_field=True, conversation_status="collecting_ticket_information")
             pending_ticket["customer_email"] = value
