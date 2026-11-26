@@ -562,58 +562,25 @@ def is_small_talk(message):
 
 
 def is_ticket_cancellation(message):
-    """Recognize clear natural-language requests to cancel a pending ticket."""
-    normalized = re.sub(r"[^a-z0-9' ]+", " ", message.lower())
+    """Return True only when the customer explicitly withdraws the support request."""
+    normalized = re.sub(r"[^a-z0-9' ]+", " ", str(message).lower())
     normalized = re.sub(r"\s+", " ", normalized).strip()
-
     normalized = normalized.replace("don't", "do not")
     normalized = normalized.replace("doesn't", "does not")
     normalized = normalized.replace("didn't", "did not")
 
-    cancellation_phrases = (
-        "cancel",
-        "cancel ticket",
-        "cancel the ticket",
-        "stop this ticket",
-        "stop the ticket",
-        "forget it",
-        "never mind",
-        "nevermind",
-        "do not create a ticket",
-        "do not raise a ticket",
-        "do not need a ticket",
-        "do not need to raise a ticket",
-        "do not want a ticket",
-        "do not want to raise a ticket",
-        "i do not need a ticket",
-        "i do not need to raise a ticket",
-        "i do not want a ticket",
-        "i do not want to raise a ticket",
-        "i don't need a ticket",
-        "i don't need to raise a ticket",
-        "i don't want a ticket",
-        "i don't want to raise a ticket",
-        "no need to create a ticket",
-        "no need to raise a ticket",
-        "leave it",
-        "do not need human support",
-        "do not want human support",
-        "i do not need human support",
-        "i do not want human support",
-        "no human support needed",
-        "no ticket generation",
-        "ticket generation is not needed",
-        "ticket generation is not required",
-        "no ticket is needed",
-        "no ticket needed",
-        "no ticket required",
-        "i do not need a support request",
+    # A bare "cancel" is deliberately excluded here. It is accepted only
+    # in workflow states where the bot has explicitly offered CANCEL.
+    explicit_patterns = (
+        r"^(?:please )?(?:cancel|stop|withdraw|close) (?:the |my |this )?(?:(?:human )?support )?(?:ticket|request)$",
+        r"^(?:i do not want|i do not need|i no longer want|i no longer need) (?:a |the )?(?:(?:human )?support )?(?:ticket|request)$",
+        r"^(?:i do not want|i do not need|i no longer want|i no longer need) (?:a |the )?(?:human )?agent$",
+        r"^no (?:(?:human )?support )?(?:ticket|request) needed$",
+        r"^no (?:human )?agent needed$",
+        r"^(?:please )?do not (?:create|raise) (?:a |the )?(?:(?:human )?support )?(?:ticket|request)$",
+        r"^(?:never mind|nevermind) (?:the )?(?:(?:human )?support )?(?:ticket|request)$",
     )
-
-    return any(
-        phrase in normalized
-        for phrase in cancellation_phrases
-    )
+    return any(re.fullmatch(pattern, normalized) for pattern in explicit_patterns)
 
 
 def is_urgent_safety_message(message):
@@ -1420,7 +1387,6 @@ def chat(data: dict):
     ).upper()
 
     semantic_human_request = semantic_category == "HUMAN_SUPPORT_REQUEST"
-    semantic_cancel_request = semantic_category == "CANCEL_SUPPORT_REQUEST"
 
     if turn_result and turn_result.get("safety_concern") is True:
         print("SEMANTIC SAFETY TYPE:", turn_result.get("safety_type", ""))
@@ -1449,16 +1415,16 @@ def chat(data: dict):
             response_source="semantic_safety_classification",
         )
 
-    # Preserve the existing pending-ticket cancellation behaviour.
+    # Only an explicit withdrawal of the support request may cancel it.
+    # Semantic classification alone must never discard an active complaint:
+    # cancelled orders, shipments, payments, and bookings are issue details.
     support_request_pending = bool(
         state.get("pending_ticket")
         or state.get("human_support_issue_pending")
         or state.get("human_escalation_count")
     )
 
-    if support_request_pending and (
-        semantic_cancel_request or is_ticket_cancellation(user_message)
-    ):
+    if support_request_pending and is_ticket_cancellation(user_message):
         state.pop("pending_ticket", None)
         state.pop("duplicate_confirmation", None)
         state.pop("human_escalation_count", None)
@@ -2584,6 +2550,45 @@ def chat(data: dict):
                     ticket_created=False,
                     conversation_status="ticket_paused",
                 )
+
+            if action == "CANCEL" and not is_ticket_cancellation(user_message):
+                # The interpreter can mistake a cancelled order or shipment
+                # for withdrawal of the support request. Preserve it as a
+                # customer-provided complaint detail instead.
+                print(
+                    "TICKET CANCELLATION GUARD: treating non-support cancellation as issue detail:",
+                    user_message,
+                )
+                pending_ticket.setdefault("detail_messages", [])
+                pending_ticket.setdefault("additional_details", "")
+                current_summary = (
+                    pending_ticket.get("issue_summary")
+                    or pending_ticket.get("original_complaint")
+                    or ""
+                ).strip()
+                if user_message.strip() and user_message.strip().lower() not in current_summary.lower():
+                    interpretation["issue_summary"] = (
+                        (current_summary + "\n" if current_summary else "")
+                        + user_message.strip()
+                    )
+                else:
+                    interpretation["issue_summary"] = current_summary
+                interpretation["action"] = "ADD_DETAIL"
+                interpretation["relevant_details"] = user_message.strip()
+                interpretation["confidence"] = max(
+                    float(interpretation.get("confidence") or 0.0), 0.70
+                )
+                interpretation["information_complete"] = False
+                interpretation["missing_information"] = (
+                    interpretation.get("missing_information") or []
+                )
+                interpretation["next_question"] = (
+                    interpretation.get("next_question")
+                    or "What exact cancellation status or reason is shown in your order details?"
+                )
+                interpretation["needs_clarification"] = False
+                interpretation["clarification_question"] = ""
+                action = "ADD_DETAIL"
 
             if action == "CANCEL":
                 state.pop("pending_ticket", None)
