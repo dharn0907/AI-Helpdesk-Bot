@@ -560,6 +560,12 @@ async def ticket_conversation_timeout_checker():
                         row.session_id,
                         pending,
                     )
+                    state_key = (
+                        f"{state.get('bot_public_id')}:{row.session_id}"
+                        if state.get("bot_public_id")
+                        else row.session_id
+                    )
+                    conversation_states[state_key] = state
                     print(
                         "TICKET CONVERSATION TIMEOUT:",
                         row.session_id,
@@ -1421,18 +1427,39 @@ def resume_ticket_conversation(session_id: str, bot_public_id: str):
             PendingTicketConversation.session_id == session_id,
             PendingTicketConversation.status.in_(["active", "awaiting_confirmation"]),
         ).first()
-        if not pending or not isinstance(pending.state_data, dict):
+        if pending and isinstance(pending.state_data, dict):
+            history = pending.state_data.get("history") or []
+            messages = [
+                {
+                    "sender": "user" if item.get("role") == "user" else "bot",
+                    "text": item.get("content", ""),
+                }
+                for item in history
+                if item.get("role") in {"user", "assistant"} and item.get("content")
+            ]
+            return {"messages": messages}
+
+        # If inactivity already submitted the ticket, restore the saved
+        # ticket-raising transcript including the generated ticket number.
+        conversation = db.query(Conversation).filter(
+            Conversation.company_id == chatbot.organization_id,
+            Conversation.chatbot_id == chatbot.id,
+            Conversation.session_id == session_id,
+        ).order_by(Conversation.last_activity.desc()).first()
+        if not conversation:
             return {"messages": []}
-        history = pending.state_data.get("history") or []
-        messages = [
-            {
-                "sender": "user" if item.get("role") == "user" else "bot",
-                "text": item.get("content", ""),
-            }
-            for item in history
-            if item.get("role") in {"user", "assistant"} and item.get("content")
-        ]
-        return {"messages": messages}
+        saved_messages = db.query(ConversationMessage).filter(
+            ConversationMessage.conversation_id == conversation.id
+        ).order_by(ConversationMessage.timestamp.asc()).all()
+        return {
+            "messages": [
+                {
+                    "sender": "user" if item.sender == "customer" else "bot",
+                    "text": item.content,
+                }
+                for item in saved_messages
+            ]
+        }
     finally:
         db.close()
 
