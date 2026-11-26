@@ -2053,27 +2053,82 @@ def chat(data: dict):
             "issue_summary",
             pending_ticket.get("original_complaint") or "",
         )
-        # A repeated request is not a new issue detail. Acknowledge it
-        # without incrementing a counter or inventing complaint information.
+        # Count explicit requests for a human while gathering ticket details.
+        # The third request triggers ticket creation instead of another loop.
         if current_step == "additional_details" and semantic_human_request:
             pending_ticket["human_support_requested"] = True
+            escalation_count = int(state.get("human_escalation_count", 0) or 0) + 1
+            state["human_escalation_count"] = escalation_count
+            state["human_support_issue_pending"] = True
+
             email = pending_ticket.get("customer_email") or state.get("customer_email")
             if not email or not valid_email(email):
                 pending_ticket["step"] = "customer_email"
+                state["human_escalation_count"] = min(escalation_count, 2)
                 return _save_and_return(
                     state, history, user_message,
-                    "Certainly. I can arrange human support. Please provide your email address first so the team can send you updates.",
+                    "I understand you'd like a human agent. Please provide your email address so the support team can contact you.",
                     ticket_created=False,
                     awaiting_email=True,
                     conversation_status="collecting_customer_email",
                 )
 
             pending_ticket["customer_email"] = email
+            state["customer_email"] = email
+
+            if escalation_count >= 3:
+                issue = (
+                    pending_ticket.get("issue_summary")
+                    or pending_ticket.get("original_complaint")
+                    or ""
+                ).strip()
+
+                if not issue:
+                    issue = (
+                        "Customer repeatedly requested human support but did not provide specific issue details."
+                    )
+                    pending_ticket["original_complaint"] = issue
+                    pending_ticket["issue_summary"] = issue
+                else:
+                    existing_details = (
+                        pending_ticket.get("additional_details") or ""
+                    ).strip()
+                    handoff_note = (
+                        "Customer repeatedly requested human support and asked "
+                        "to be connected to an agent. Please follow up directly."
+                    )
+                    pending_ticket["additional_details"] = (
+                        existing_details + "\n\n" + handoff_note
+                        if existing_details else handoff_note
+                    )
+
+                pending_ticket["human_support_requested"] = True
+                pending_ticket["summary_confirmed"] = True
+                pending_ticket["skip_duplicate_check"] = True
+                pending_ticket["intervention"] = "HUMAN_ONLY"
+                pending_ticket["intervention_confidence"] = 1.0
+                pending_ticket["intent"] = (
+                    pending_ticket.get("intent") or "general_enquiry"
+                )
+
+                return _finish_ticket_creation(
+                    state, history, user_message, session_id, pending_ticket
+                )
+
+            remaining = 3 - escalation_count
+            reply = (
+                f"I understand you want a human support agent. "
+                f"I've noted your request ({escalation_count}/3). "
+                f"Please tell me the issue details, or ask again if you'd "
+                f"like me to create the handoff ticket now. "
+                f"{remaining} more request"
+                f"{'s' if remaining != 1 else ''} will trigger the handoff."
+            )
             return _save_and_return(
-                state, history, user_message,
-                "I've recorded that you'd like a human support agent. I have your email. Let's continue with the issue details so the agent can investigate it.",
+                state, history, user_message, reply,
                 ticket_created=False,
                 awaiting_additional_details=True,
+                human_escalation_count=escalation_count,
                 conversation_status="collecting_additional_details",
             )
 
