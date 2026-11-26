@@ -1214,17 +1214,26 @@ def _start_ticket_collection(
         or state.get("customer_email")
     )
     state["pending_ticket"] = {
+        **existing_pending,
         "customer_email": collected_email,
         "original_complaint": complaint,
-        "additional_details": "",
-        "detail_messages": [],
+        "additional_details": existing_pending.get("additional_details", ""),
+        "detail_messages": existing_pending.get("detail_messages", []),
         "issue_summary": complaint or "",
         "intent": intent,
         "intervention": intervention,
         "intervention_confidence": intervention_confidence,
         "human_support_requested": bool(existing_pending.get("human_support_requested")),
         "step": "additional_details",
+        "custom_fields": existing_pending.get("custom_fields", {}),
     }
+    first_global_field = _next_missing_global_ticket_field(
+        state["pending_ticket"], state.get("company_id")
+    )
+    if first_global_field:
+        return _ask_for_ticket_field(
+            state, history, user_message, state["pending_ticket"], first_global_field
+        )
     return _save_and_return(
         state,
         history,
@@ -1302,6 +1311,13 @@ def _get_ticket_intake_fields(company_id, intent):
             return [{"key": "email", "label": "Email address", "type": "email", "required": True, "prompt": "What email address should our support team use to send you updates?"}]
         config = row.configuration if isinstance(row.configuration, dict) else {}
         fields = list(config.get("global_fields") or [])
+        # Repair configurations saved by the earlier builder where an admin
+        # changed Email to Phone but the field key remained "email".
+        for field in fields:
+            if field.get("key") == "email" and field.get("type") == "phone":
+                field["key"] = "phone"
+                if "email address" in str(field.get("prompt") or "").lower():
+                    field["prompt"] = "What phone number can our support team use to contact you?"
         category_name = get_ticket_category(intent or "").strip().lower()
         intent_key = re.sub(r"[^a-z0-9]+", "_", str(intent or "").lower()).strip("_")
         for category in config.get("categories") or []:
@@ -1312,6 +1328,35 @@ def _get_ticket_intake_fields(company_id, intent):
                 fields.extend(category.get("fields") or [])
                 break
         return fields
+    finally:
+        db.close()
+
+
+def _next_missing_global_ticket_field(pending_ticket, company_id):
+    db = SessionLocal()
+    try:
+        row = db.query(TicketIntakeConfiguration).filter(
+            TicketIntakeConfiguration.company_id == company_id
+        ).first()
+        if not row:
+            global_fields = [{
+                "key": "email", "label": "Email address", "type": "email",
+                "required": True,
+                "prompt": "What email address should our support team use to send you updates?",
+            }]
+        else:
+            config = row.configuration if isinstance(row.configuration, dict) else {}
+            global_fields = list(config.get("global_fields") or [])
+        values = pending_ticket.setdefault("custom_fields", {})
+        skipped = set(pending_ticket.get("skipped_intake_fields") or [])
+        for field in global_fields:
+            key = field.get("key")
+            if key in skipped or not field.get("required", False):
+                continue
+            value = pending_ticket.get("customer_email") if (key == "email" or field.get("type") == "email") else values.get(key)
+            if value is None or not str(value).strip():
+                return field
+        return None
     finally:
         db.close()
 
