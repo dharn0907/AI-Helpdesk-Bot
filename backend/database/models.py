@@ -166,6 +166,9 @@ class Ticket(Base):
 
     customer_email = Column(String(255), nullable=True)
 
+    # Company-configured answers collected by the chatbot (phone, order ID, etc.).
+    custom_fields = Column(JSON, nullable=False, default=dict)
+
     intent = Column(String(100), nullable=False)
 
     category = Column(String(100), nullable=True, index=True)
