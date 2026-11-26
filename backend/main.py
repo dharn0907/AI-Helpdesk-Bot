@@ -1774,6 +1774,162 @@ def chat(data: dict):
                 conversation_status="new_issue_domain_clarification",
             )
 
+        # --------------------------------------------
+        # C. Confirm the issue summary
+        # --------------------------------------------
+
+
+        if current_step == "awaiting_summary_confirmation":
+            choice = user_message.strip().lower()
+            choice = choice.strip(" .,!")
+
+            positive_choices = {
+                "yes", "y", "yes confirm", "confirm",
+                "correct", "looks good", "that's correct",
+                "that is correct", "accurate",
+                "raise a ticket", "raise ticket",
+                "please raise a ticket", "create a ticket",
+                "please create a ticket", "open a ticket",
+                "yes raise a ticket", "yes create a ticket",
+            }
+
+            negative_choices = {
+                "no", "n", "nope", "incorrect",
+                "not correct", "make corrections",
+                "needs correction",
+            }
+
+            if choice in positive_choices:
+
+                # Use the complete, customer-confirmed issue summary
+                complaint = (
+                    pending_ticket.get("issue_summary")
+                    or pending_ticket.get("original_complaint")
+                    or ""
+                ).strip()
+
+                intent = pending_ticket.get("intent")
+                intervention = pending_ticket.get("intervention")
+                intervention_confidence = pending_ticket.get(
+                    "intervention_confidence"
+                )
+
+                # Search approved resolutions through MCP after the
+                # customer confirms the complete issue summary.
+                try:
+                    from services.mcp_client_service import (
+                        search_solved_tickets_via_mcp,
+                    )
+
+                    approved_match = search_solved_tickets_via_mcp(
+                        user_message=complaint,
+                        intent=intent,
+                        company_id=state.get("company_id"),
+                        chatbot_id=state.get("chatbot_id"),
+                    )
+
+                    if approved_match and not approved_match.get("found"):
+                        approved_match = None
+
+                except Exception as exc:
+                    print(f"MCP approved solution retrieval failed: {exc}")
+                    approved_match = None 
+                # If a suitable solution exists, offer it naturally
+                if approved_match:
+
+                    reply = (
+                        "Thanks for clarifying. You can try this:\n\n"
+                        f"{approved_match['solution']}\n\n"
+                        "Did this resolve the issue? Reply YES or NO."
+                    )
+
+                    # Create a permanent record of this retrieval attempt.
+                    attempt_id = _create_historical_solution_attempt(
+                        state=state,
+                        complaint=complaint,
+                        matched_ticket=approved_match,
+                        response_delivered=reply,
+                    )
+
+                    state["awaiting_resolution_feedback"] = {
+                        "complaint": complaint,
+                        "intent": intent,
+                        "intervention": intervention,
+                        "intervention_confidence": intervention_confidence,
+                        "matched_ticket": approved_match,
+                        "historical_attempt_id": attempt_id,
+                    }
+
+                    state.pop("pending_ticket", None)
+
+                    return _save_and_return(
+                        state,
+                        history,
+                        user_message,
+                        reply,
+                        ticket_created=False,
+                        awaiting_resolution_feedback=True,
+                        conversation_status="awaiting_resolution_feedback",
+                    )               
+
+                # Reuse the email collected before complaint validation.
+                saved_email = (
+                    pending_ticket.get("customer_email")
+                    or state.get("customer_email")
+                )
+                if saved_email and valid_email(saved_email):
+                    pending_ticket["customer_email"] = saved_email
+                    return _finish_ticket_creation(
+                        state, history, user_message, session_id, pending_ticket
+                    )
+
+                pending_ticket["step"] = "customer_email"
+                reply = (
+                    "Thank you for confirming the summary. "
+                    "Please provide your email address so our support "
+                    "team can send you ticket updates."
+                )
+                return _save_and_return(
+                    state, history, user_message, reply,
+                    ticket_created=False,
+                    awaiting_email=True,
+                    conversation_status="collecting_customer_email",
+                )
+
+            if choice in negative_choices:
+                pending_ticket["step"] = "additional_details"
+
+                reply = (
+                    "Of course. Please tell me what needs to be corrected "
+                    "or added to the summary."
+                )
+
+                return _save_and_return(
+                    state,
+                    history,
+                    user_message,
+                    reply,
+                    ticket_created=False,
+                    awaiting_additional_details=True,
+                    conversation_status="collecting_additional_details",
+                )
+
+            reply = (
+                "Please reply YES to confirm the summary, "
+                "or NO if you would like to correct it."
+            )
+
+            return _save_and_return(
+                state,
+                history,
+                user_message,
+                reply,
+                ticket_created=False,
+                awaiting_summary_confirmation=True,
+                conversation_status="awaiting_summary_confirmation",
+            )
+
+
         # Ensure older pending conversations have the new fields.
         pending_ticket.setdefault("additional_details", "")
         pending_ticket.setdefault("detail_messages", [])
@@ -1875,7 +2031,7 @@ def chat(data: dict):
                     customer_message=user_message,
                     pending_ticket=pending_ticket,
                     conversation_history=history[-10:],
-                    company_config=_get_active_company_config(),
+                    company_config=_get_active_company_config(state.get("company_id")),
                 )
             except Exception as exc:
                 print(f"Ticket message interpretation failed: {exc}")
@@ -2635,157 +2791,6 @@ def chat(data: dict):
                 ticket_created=False,
                 awaiting_ticket_direction=True,
                 conversation_status="clarifying_ticket_context",
-            )
-
-        # --------------------------------------------
-        # C. Confirm the issue summary
-        # --------------------------------------------
-
-
-        if current_step == "awaiting_summary_confirmation":
-            choice = user_message.strip().lower()
-            choice = choice.strip(" .,!")
-
-            positive_choices = {
-                "yes", "y", "yes confirm", "confirm",
-                "correct", "looks good", "that's correct",
-                "that is correct", "accurate",
-            }
-
-            negative_choices = {
-                "no", "n", "nope", "incorrect",
-                "not correct", "make corrections",
-                "needs correction",
-            }
-
-            if choice in positive_choices:
-
-                # Use the complete, customer-confirmed issue summary
-                complaint = (
-                    pending_ticket.get("issue_summary")
-                    or pending_ticket.get("original_complaint")
-                    or ""
-                ).strip()
-
-                intent = pending_ticket.get("intent")
-                intervention = pending_ticket.get("intervention")
-                intervention_confidence = pending_ticket.get(
-                    "intervention_confidence"
-                )
-
-                # Search approved resolutions through MCP after the
-                # customer confirms the complete issue summary.
-                try:
-                    from services.mcp_client_service import (
-                        search_solved_tickets_via_mcp,
-                    )
-
-                    approved_match = search_solved_tickets_via_mcp(
-                        user_message=complaint,
-                        intent=intent,
-                        company_id=state.get("company_id"),
-                        chatbot_id=state.get("chatbot_id"),
-                    )
-
-                    if approved_match and not approved_match.get("found"):
-                        approved_match = None
-
-                except Exception as exc:
-                    print(f"MCP approved solution retrieval failed: {exc}")
-                    approved_match = None 
-                # If a suitable solution exists, offer it naturally
-                if approved_match:
-
-                    reply = (
-                        "Thanks for clarifying. You can try this:\n\n"
-                        f"{approved_match['solution']}\n\n"
-                        "Did this resolve the issue? Reply YES or NO."
-                    )
-
-                    # Create a permanent record of this retrieval attempt.
-                    attempt_id = _create_historical_solution_attempt(
-                        state=state,
-                        complaint=complaint,
-                        matched_ticket=approved_match,
-                        response_delivered=reply,
-                    )
-
-                    state["awaiting_resolution_feedback"] = {
-                        "complaint": complaint,
-                        "intent": intent,
-                        "intervention": intervention,
-                        "intervention_confidence": intervention_confidence,
-                        "matched_ticket": approved_match,
-                        "historical_attempt_id": attempt_id,
-                    }
-
-                    state.pop("pending_ticket", None)
-
-                    return _save_and_return(
-                        state,
-                        history,
-                        user_message,
-                        reply,
-                        ticket_created=False,
-                        awaiting_resolution_feedback=True,
-                        conversation_status="awaiting_resolution_feedback",
-                    )               
-
-                # Reuse the email collected before complaint validation.
-                saved_email = (
-                    pending_ticket.get("customer_email")
-                    or state.get("customer_email")
-                )
-                if saved_email and valid_email(saved_email):
-                    pending_ticket["customer_email"] = saved_email
-                    return _finish_ticket_creation(
-                        state, history, user_message, session_id, pending_ticket
-                    )
-
-                pending_ticket["step"] = "customer_email"
-                reply = (
-                    "Thank you for confirming the summary. "
-                    "Please provide your email address so our support "
-                    "team can send you ticket updates."
-                )
-                return _save_and_return(
-                    state, history, user_message, reply,
-                    ticket_created=False,
-                    awaiting_email=True,
-                    conversation_status="collecting_customer_email",
-                )
-
-            if choice in negative_choices:
-                pending_ticket["step"] = "additional_details"
-
-                reply = (
-                    "Of course. Please tell me what needs to be corrected "
-                    "or added to the summary."
-                )
-
-                return _save_and_return(
-                    state,
-                    history,
-                    user_message,
-                    reply,
-                    ticket_created=False,
-                    awaiting_additional_details=True,
-                    conversation_status="collecting_additional_details",
-                )
-
-            reply = (
-                "Please reply YES to confirm the summary, "
-                "or NO if you would like to correct it."
-            )
-
-            return _save_and_return(
-                state,
-                history,
-                user_message,
-                reply,
-                ticket_created=False,
-                awaiting_summary_confirmation=True,
-                conversation_status="awaiting_summary_confirmation",
             )
 
         # --------------------------------------------
