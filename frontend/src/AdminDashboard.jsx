@@ -62,6 +62,10 @@ export default function AdminDashboard({ onBack, session, chatbot }) {
   const [smtpConfigured, setSmtpConfigured] = useState(false);
   const [smtpLoading, setSmtpLoading] = useState(false);
   const [smtpMessage, setSmtpMessage] = useState("");
+  const [ticketTimeoutEnabled, setTicketTimeoutEnabled] = useState(true);
+  const [ticketTimeoutMinutes, setTicketTimeoutMinutes] = useState("2");
+  const [ticketTimeoutLoading, setTicketTimeoutLoading] = useState(false);
+  const [ticketTimeoutMessage, setTicketTimeoutMessage] = useState("");
 
 
   const headers = (extra = {}) => ({
@@ -115,6 +119,36 @@ export default function AdminDashboard({ onBack, session, chatbot }) {
       setSupportEmailLoading(false);
     }
   };
+  const loadTicketConversationTimeout = async () => {
+    const response = await fetch(`${API}/companies/current/ticket-conversation-timeout`, {
+      headers: headers()
+    });
+    const data = await readResponse(response);
+    setTicketTimeoutEnabled(data.enabled !== false);
+    setTicketTimeoutMinutes(String(data.timeout_minutes || 2));
+  };
+
+  const saveTicketConversationTimeout = async () => {
+    setTicketTimeoutLoading(true);
+    setTicketTimeoutMessage("");
+    try {
+      const response = await fetch(`${API}/companies/current/ticket-conversation-timeout`, {
+        method: "PATCH",
+        headers: headers(),
+        body: JSON.stringify({
+          enabled: ticketTimeoutEnabled,
+          timeout_minutes: Number(ticketTimeoutMinutes)
+        })
+      });
+      const data = await readResponse(response);
+      setTicketTimeoutMessage(data.message || "Inactivity settings saved.");
+    } catch (err) {
+      setTicketTimeoutMessage(err.message || "Could not save inactivity settings.");
+    } finally {
+      setTicketTimeoutLoading(false);
+    }
+  };
+
   const loadSmtpSettings = async () => {
     const response = await fetch(`${API}/companies/smtp-settings`, {
       headers: headers()
@@ -196,6 +230,7 @@ export default function AdminDashboard({ onBack, session, chatbot }) {
       setCompanyName(data.company_name);
       setConfig({ ...emptyConfig, ...data.configuration });
       await loadSupportEmail();
+      await loadTicketConversationTimeout();
       await loadSmtpSettings();
 
       await loadKnowledgeFiles();
@@ -863,6 +898,61 @@ export default function AdminDashboard({ onBack, session, chatbot }) {
                 )}
               </form>
             </section>
+            <section style={{
+              background: "#ffffff",
+              border: "1px solid #e5e7eb",
+              borderRadius: 10,
+              padding: 20,
+              marginBottom: 18
+            }}>
+              <h2 style={{ fontSize: 19, marginTop: 0 }}>
+                Ticket Conversation Inactivity
+              </h2>
+              <p style={{ color: "#6b7280", fontSize: 13 }}>
+                If a customer stops replying while a support ticket is being prepared, the bot can submit the details already collected after this period. New customer messages reset the timer. The default is 2 minutes.
+              </p>
+              <label style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 12 }}>
+                <input
+                  type="checkbox"
+                  checked={ticketTimeoutEnabled}
+                  onChange={(e) => setTicketTimeoutEnabled(e.target.checked)}
+                />
+                Enable automatic ticket submission after inactivity
+              </label>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                <label htmlFor="ticket-timeout-minutes">Inactivity period (minutes)</label>
+                <input
+                  id="ticket-timeout-minutes"
+                  type="number"
+                  min="1"
+                  max="30"
+                  value={ticketTimeoutMinutes}
+                  onChange={(e) => setTicketTimeoutMinutes(e.target.value)}
+                  style={{ ...inputStyle, width: 110, marginBottom: 0 }}
+                />
+                <button
+                  type="button"
+                  disabled={ticketTimeoutLoading}
+                  onClick={saveTicketConversationTimeout}
+                  style={{
+                    padding: "10px 18px",
+                    background: "#2563eb",
+                    color: "#ffffff",
+                    border: "none",
+                    borderRadius: 6,
+                    cursor: "pointer"
+                  }}
+                >
+                  {ticketTimeoutLoading ? "Saving..." : "Save Inactivity Settings"}
+                </button>
+              </div>
+              {ticketTimeoutMessage && (
+                <p style={{ color: "#6b7280", fontSize: 13, marginBottom: 0 }}>
+                  {ticketTimeoutMessage}
+                </p>
+              )}
+            </section>
+
             <section style={{
               background: "#ffffff",
               border: "1px solid #e5e7eb",
