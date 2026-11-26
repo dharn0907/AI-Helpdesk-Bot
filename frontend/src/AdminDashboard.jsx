@@ -909,7 +909,7 @@ export default function AdminDashboard({ onBack, session, chatbot }) {
                 Ticket Conversation Inactivity
               </h2>
               <p style={{ color: "#6b7280", fontSize: 13 }}>
-                If a customer stops replying while a support ticket is being prepared, the bot can submit the details already collected after this period. New customer messages reset the timer. The default is 2 minutes.
+                If a customer stops replying while a support ticket is being prepared, the bot submits the details already collected after this period, provided a valid contact email has been collected. New customer messages reset the timer. The default is 2 minutes.
               </p>
               <label style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 12 }}>
                 <input
