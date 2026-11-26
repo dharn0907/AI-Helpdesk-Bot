@@ -575,6 +575,7 @@ def is_ticket_cancellation(message):
         r"^(?:please )?(?:cancel|stop|withdraw|close) (?:the |my |this )?(?:(?:human )?support )?(?:ticket|request)$",
         r"^(?:i do not want|i do not need|i no longer want|i no longer need) (?:a |the )?(?:(?:human )?support )?(?:ticket|request)$",
         r"^(?:i do not want|i do not need|i no longer want|i no longer need) (?:a |the )?(?:human )?agent$",
+        r"^(?:i do not want|i do not need|i no longer want|i no longer need) (?:human )?support$",
         r"^no (?:(?:human )?support )?(?:ticket|request) needed$",
         r"^no (?:human )?agent needed$",
         r"^(?:please )?do not (?:create|raise) (?:a |the )?(?:(?:human )?support )?(?:ticket|request)$",
