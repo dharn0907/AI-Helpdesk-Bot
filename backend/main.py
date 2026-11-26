@@ -1886,11 +1886,66 @@ def chat(data: dict):
     # This state is reached only after the customer has supplied an email
     # but has not yet described the actual problem.
     if pending_ticket and current_step == "human_support_issue_details":
-        if semantic_human_request or semantic_category not in {"CUSTOMER_ISSUE", "FOLLOW_UP_ISSUE"}:
+        if semantic_human_request:
+            pending_ticket["human_support_requested"] = True
+            state["human_support_issue_pending"] = True
+            escalation_count = int(state.get("human_escalation_count", 0) or 0) + 1
+            state["human_escalation_count"] = escalation_count
+
+            email = pending_ticket.get("customer_email") or state.get("customer_email")
+            if not email or not valid_email(email):
+                pending_ticket["step"] = "customer_email"
+                state["human_escalation_count"] = min(escalation_count, 2)
+                return _save_and_return(
+                    state, history, user_message,
+                    "Of course. What email address should our support team use to contact you?",
+                    ticket_created=False,
+                    awaiting_email=True,
+                    conversation_status="collecting_customer_email",
+                )
+
+            pending_ticket["customer_email"] = email
+            state["customer_email"] = email
+
+            if escalation_count >= 3:
+                issue = (
+                    pending_ticket.get("issue_summary")
+                    or pending_ticket.get("original_complaint")
+                    or ""
+                ).strip()
+                if not issue:
+                    issue = (
+                        "Customer repeatedly requested human support but did not provide "
+                        "specific issue details. Human support team follow-up is required."
+                    )
+                    pending_ticket["original_complaint"] = issue
+                    pending_ticket["issue_summary"] = issue
+
+                pending_ticket["human_support_requested"] = True
+                pending_ticket["summary_confirmed"] = True
+                pending_ticket["skip_duplicate_check"] = True
+                pending_ticket["intervention"] = "HUMAN_ONLY"
+                pending_ticket["intervention_confidence"] = 1.0
+                pending_ticket["intent"] = pending_ticket.get("intent") or "general_enquiry"
+                return _finish_ticket_creation(
+                    state, history, user_message, session_id, pending_ticket
+                )
+
             reply = (
-                "I've recorded that you want a human support agent. "
-                "I still need the actual problem you're experiencing so "
-                "the agent receives an accurate support request. What happened?"
+                "Of course. I can arrange that. Could you briefly describe "
+                "what you need help with so the team knows how best to assist?"
+            )
+            return _save_and_return(
+                state, history, user_message, reply,
+                ticket_created=False,
+                awaiting_issue_details=True,
+                conversation_status="collecting_support_issue",
+            )
+
+        if semantic_category not in {"CUSTOMER_ISSUE", "FOLLOW_UP_ISSUE"}:
+            reply = (
+                "I'd be happy to help arrange support. Could you tell me "
+                "a little about the problem you're experiencing?"
             )
             return _save_and_return(
                 state, history, user_message, reply,
