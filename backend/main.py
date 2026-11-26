@@ -1282,7 +1282,9 @@ def _ticket_additional_details_for_storage(pending_ticket):
             "Confirmed issue summary:\n" + summary
         )
 
-    custom_fields = pending_ticket.get("custom_fields") or {}
+    custom_fields = _ticket_custom_fields_for_storage(
+        pending_ticket, pending_ticket.get("company_id")
+    )
     if custom_fields:
         sections.append(
             "Configured customer information:\n" +
@@ -1331,6 +1333,22 @@ def _next_missing_ticket_field(pending_ticket, company_id):
         if value is None or not str(value).strip():
             return field
     return None
+
+
+def _ticket_custom_fields_for_storage(pending_ticket, company_id):
+    values = pending_ticket.get("custom_fields") or {}
+    labels = {}
+    for field in _get_ticket_intake_fields(company_id, pending_ticket.get("intent")):
+        key = field.get("key")
+        if key in values and key != "email" and field.get("type") != "email":
+            labels[field.get("label") or key] = values[key]
+    # Retain any values from older or removed field definitions.
+    for key, value in values.items():
+        if key not in {
+            field.get("key") for field in _get_ticket_intake_fields(company_id, pending_ticket.get("intent"))
+        }:
+            labels[key] = value
+    return labels
 
 
 def _ask_for_ticket_field(state, history, user_message, pending_ticket, field):
@@ -1396,7 +1414,7 @@ def _finish_ticket_creation(state, history, user_message, session_id, pending_ti
             customer_message=pending_ticket["original_complaint"],
             additional_details=_ticket_additional_details_for_storage(pending_ticket),
             customer_email=email,
-            custom_fields=pending_ticket.get("custom_fields") or {},
+            custom_fields=_ticket_custom_fields_for_storage(pending_ticket, state.get("company_id")),
             intent=pending_ticket["intent"],
             session_id=session_id,
             company_id=state.get("company_id"),
