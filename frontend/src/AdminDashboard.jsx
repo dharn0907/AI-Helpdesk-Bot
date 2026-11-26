@@ -156,7 +156,26 @@ export default function AdminDashboard({ onBack, session, chatbot }) {
   const loadTicketIntake = async () => {
     const response = await fetch(`${API}/companies/current/ticket-intake`, { headers: headers() });
     const data = await readResponse(response);
-    setTicketIntake({ global_fields: Array.isArray(data.global_fields) ? data.global_fields : [], categories: Array.isArray(data.categories) ? data.categories : [] });
+    const normalizeField = (field) => {
+      if (field?.key === "email" && field?.type === "phone") {
+        return {
+          ...field,
+          key: "phone",
+          prompt: /email address/i.test(field.prompt || "")
+            ? "What phone number can our support team use to contact you?"
+            : field.prompt,
+          required: true,
+        };
+      }
+      return field;
+    };
+    setTicketIntake({
+      global_fields: (Array.isArray(data.global_fields) ? data.global_fields : []).map(normalizeField),
+      categories: (Array.isArray(data.categories) ? data.categories : []).map(category => ({
+        ...category,
+        fields: (Array.isArray(category.fields) ? category.fields : []).map(normalizeField),
+      })),
+    });
   };
 
   const saveTicketIntake = async () => {
