@@ -18,7 +18,10 @@ function ChatApp() {
   const [uploading, setUploading] = useState(false);
 
   const fileInputRef = useRef(null);
-  const sessionIdRef = useRef(crypto.randomUUID());
+  const sessionStorageKey = `helpdesk_session_id_${import.meta.env.VITE_BOT_PUBLIC_ID || "default"}`;
+  const sessionIdRef = useRef(
+    localStorage.getItem(sessionStorageKey) || crypto.randomUUID()
+  );
   const customerIdRef = useRef(
     localStorage.getItem("helpdesk_customer_id") || crypto.randomUUID()
   );
@@ -28,6 +31,10 @@ function ChatApp() {
       "helpdesk_customer_id",
       customerIdRef.current
     );
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem(sessionStorageKey, sessionIdRef.current);
   }, []);
   const requestInProgressRef = useRef(false);
 
