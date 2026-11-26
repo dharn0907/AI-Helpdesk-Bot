@@ -1033,6 +1033,24 @@ def _classify_issue(issue_text):
     return intent_result, intervention_result
 
 
+def _first_investigation_question(complaint):
+    """Ask an open, issue-specific question without assuming the cause."""
+    text = (complaint or "").lower()
+
+    if re.search(r"\b(payment|paid|charge|charged|debit|debited|transaction|billing)\b", text):
+        return "Could you briefly explain what happened with your payment?"
+    if re.search(r"\b(delivery|shipping|shipment|order|package)\b", text):
+        return "Could you briefly explain what happened with your order or delivery?"
+    if re.search(r"\b(login|log in|sign in|signin|account|password)\b", text):
+        return "What happens when you try to sign in to your account?"
+    if re.search(r"\b(refund|reimburse|money back)\b", text):
+        return "Could you tell me what happened with your refund?"
+    if re.search(r"\b(product|device|item|goods)\b", text):
+        return "Could you briefly explain what problem you're experiencing with the product?"
+
+    return "Could you briefly explain what happened?"
+
+
 def _start_ticket_collection(
     state,
     history,
@@ -2996,8 +3014,7 @@ def chat(data: dict):
                 return _start_ticket_collection(
                     state, history, user_message, complaint,
                     intent, intervention, confidence,
-                    "Thank you. I've verified the issue. "
-                    "Please share any additional details that will help us resolve it.",
+                    _first_investigation_question(complaint),
                 )
 
             if semantic_human_request:
@@ -3375,8 +3392,7 @@ def chat(data: dict):
             return _start_ticket_collection(
                 state, history, user_message, complaint,
                 intent, intervention, confidence,
-                "I've verified the issue. Please share any additional details "
-                "that will help our support team resolve it.",
+                _first_investigation_question(complaint),
             )
 
         pending_ticket["step"] = "customer_email"
