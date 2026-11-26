@@ -114,6 +114,7 @@ def create_ticket(data: dict, db: Session = Depends(get_db)):
     session_id = data.get("session_id")
     additional_details = data.get("additional_details", "")
     customer_email = data.get("customer_email")
+    custom_fields = data.get("custom_fields") or {}
     chatbot_id = data.get("chatbot_id")
 
     if not customer_message:
@@ -138,6 +139,7 @@ def create_ticket(data: dict, db: Session = Depends(get_db)):
         customer_message=customer_message,
         additional_details=additional_details,
         customer_email=customer_email,
+        custom_fields=custom_fields,
         intent=intent,
         priority="Medium",
         status="Open",
@@ -434,7 +436,10 @@ def update_ticket(
             OrganizationSettings.organization_id == ticket.company_id
         ).first()
 
-        if (
+        if not ticket.customer_email:
+            email_sent = False
+            email_message = "No customer email was collected for this ticket."
+        elif (
             not organization_settings
             or not organization_settings.support_email_verified
         ):
