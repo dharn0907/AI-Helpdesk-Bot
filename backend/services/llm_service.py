@@ -418,6 +418,12 @@ PENDING SUPPORT CANCELLATION:
 - This includes no longer needing an agent or wanting to stop the support request.
 - Do not classify cancellation as an email address or issue description.
 - Do not infer cancellation when no support request is pending.
+- A cancelled order, shipment, delivery, booking, subscription, payment,
+  or transaction is a customer issue, not cancellation of the support request.
+- If the customer says an order or shipment was cancelled, classify it as
+  CUSTOMER_ISSUE or FOLLOW_UP_ISSUE according to the conversation context.
+- Only classify CANCEL_SUPPORT_REQUEST when the customer clearly withdraws
+  the pending request for human support itself.
 
 PRODUCT AND CORRECTION TRACKING:
 
