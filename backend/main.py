@@ -51,6 +51,7 @@ from database.models import (
     HistoricalSolutionAttempt,
     PendingTicketConversation,
     TicketConversationSettings,
+    TicketIntakeConfiguration,
 )
 
 def _get_active_company_config(company_id=None):
@@ -525,13 +526,16 @@ async def ticket_conversation_timeout_checker():
                 state = row.state_data if isinstance(row.state_data, dict) else {}
                 pending = state.get("pending_ticket") or {}
                 email = pending.get("customer_email") or state.get("customer_email")
-                if not pending or not email or not valid_email(email):
-                    # Preserve the conversation. The customer must provide a
-                    # contact email before a support ticket can be submitted.
+                if not pending:
+                    db.delete(row)
+                    db.commit()
+                    continue
+                if email and valid_email(email):
+                    pending["customer_email"] = email
+                if _next_missing_ticket_field(pending, row.company_id):
                     row.status = "awaiting_confirmation"
                     db.commit()
                     continue
-                pending["customer_email"] = email
 
                 # Recover safely if a process stopped after creating this
                 # exact ticket but before removing its pending conversation.
@@ -819,6 +823,7 @@ def create_support_ticket(
     session_id,
     company_id=None,
     chatbot_id=None,
+    custom_fields=None,
 ):
     
     """Create a ticket in the configured database."""
@@ -832,6 +837,7 @@ def create_support_ticket(
             customer_message=customer_message,
             additional_details=additional_details,
             customer_email=customer_email,
+            custom_fields=custom_fields or {},
             intent=intent,
             category=get_ticket_category(intent),
             priority="Medium",
@@ -1272,12 +1278,57 @@ def _ticket_additional_details_for_storage(pending_ticket):
     return "\n\n".join(sections)
 
 
+def _get_ticket_intake_fields(company_id, intent):
+    db = SessionLocal()
+    try:
+        row = db.query(TicketIntakeConfiguration).filter(TicketIntakeConfiguration.company_id == company_id).first()
+        if not row:
+            return [{"key": "email", "label": "Email address", "type": "email", "required": True, "prompt": "What email address should our support team use to send you updates?"}]
+        config = row.configuration if isinstance(row.configuration, dict) else {}
+        fields = list(config.get("global_fields") or [])
+        category_name = get_ticket_category(intent or "").strip().lower()
+        intent_key = re.sub(r"[^a-z0-9]+", "_", str(intent or "").lower()).strip("_")
+        for category in config.get("categories") or []:
+            key = str(category.get("key") or "").lower()
+            label = re.sub(r"[^a-z0-9]+", " ", str(category.get("label") or "").lower()).strip()
+            normalized_category = re.sub(r"[^a-z0-9]+", " ", category_name).strip()
+            if key == intent_key or (label and label == normalized_category):
+                fields.extend(category.get("fields") or [])
+                break
+        return fields
+    finally:
+        db.close()
+
+
+def _next_missing_ticket_field(pending_ticket, company_id):
+    values = pending_ticket.setdefault("custom_fields", {})
+    for field in _get_ticket_intake_fields(company_id, pending_ticket.get("intent")):
+        if not field.get("required", False):
+            continue
+        key = field.get("key")
+        value = pending_ticket.get("customer_email") if key == "email" else values.get(key)
+        if value is None or not str(value).strip():
+            return field
+    return None
+
+
+def _ask_for_ticket_field(state, history, user_message, pending_ticket, field):
+    pending_ticket["step"] = "collecting_custom_fields"
+    pending_ticket["current_intake_field"] = field.get("key")
+    question = (field.get("prompt") or "").strip() or f"Could you provide your {field.get('label', 'requested information')}?"
+    return _save_and_return(state, history, user_message, question, ticket_created=False, awaiting_custom_field=True, required_field=field.get("key"), conversation_status="collecting_ticket_information")
+
+
 def _finish_ticket_creation(state, history, user_message, session_id, pending_ticket):
     """Check for duplicates and create the ticket when appropriate."""
-    email = pending_ticket["customer_email"]
+    email = pending_ticket.get("customer_email")
+    missing_field = _next_missing_ticket_field(pending_ticket, state.get("company_id"))
+    if missing_field:
+        return _ask_for_ticket_field(state, history, user_message, pending_ticket, missing_field)
 
     if (
-        not pending_ticket.get("force_new_ticket")
+        email
+        and not pending_ticket.get("force_new_ticket")
         and not pending_ticket.get("skip_duplicate_check")
     ):
         try:
@@ -1324,6 +1375,7 @@ def _finish_ticket_creation(state, history, user_message, session_id, pending_ti
             customer_message=pending_ticket["original_complaint"],
             additional_details=_ticket_additional_details_for_storage(pending_ticket),
             customer_email=email,
+            custom_fields=pending_ticket.get("custom_fields") or {},
             intent=pending_ticket["intent"],
             session_id=session_id,
             company_id=state.get("company_id"),
