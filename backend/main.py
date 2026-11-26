@@ -2087,7 +2087,7 @@ def chat(data: dict):
             pending_ticket["customer_email"] = value
             state["customer_email"] = value
         elif field_type == "phone":
-            digits = re.sub(r"\\D", "", value)
+            digits = re.sub(r"\D", "", value)
             if len(digits) < 7 or len(digits) > 15:
                 return _save_and_return(state, history, user_message, "Could you check that phone number and send it again, including the country code if needed?", ticket_created=False, awaiting_custom_field=True, conversation_status="collecting_ticket_information")
             pending_ticket.setdefault("custom_fields", {})[field_key] = value
