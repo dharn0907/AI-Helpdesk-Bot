@@ -3738,7 +3738,7 @@ def chat(data: dict):
     normalized_customer_turn = re.sub(r"\s+", " ", user_message.lower()).strip()
     clear_order_fulfilment_problem = bool(re.search(
         r"\b("
-        r"not delivered|has not delivered|hasn't delivered|"
+        r"not delivered|not yet delivered|has not delivered|hasn't delivered|"
         r"not yet arrived|has not arrived|hasn't arrived|"
         r"never arrived|not received|haven't received|have not received|"
         r"still waiting for (?:my )?(?:order|package|delivery)|"
