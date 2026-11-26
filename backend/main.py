@@ -3892,17 +3892,8 @@ def chat(data: dict):
             "asked_questions": [],
             "step": "customer_email",
         }
-        reply = (
-            "I'm sorry you're experiencing this issue. "
-            "Please provide your email address so I can verify "
-            "the request and help you further."
-        )
-        return _save_and_return(
-            state, history, user_message, reply,
-            ticket_created=False,
-            awaiting_email=True,
-            conversation_status="collecting_customer_email",
-        )
+        # Continue through domain and intent analysis before asking for
+        # whichever contact fields this company has configured.
 
         domain_result = _check_company_domain(issue_text, history, state.get("company_id"))
         domain_decision = domain_result.get("decision", "UNCERTAIN")
@@ -4052,6 +4043,23 @@ def chat(data: dict):
     print("INTENT:", intent)
     print("INTERVENTION:", intervention)
     print("INTERVENTION CONFIDENCE:", intervention_confidence)
+    # Apply this company's configured contact requirements only after
+    # identifying the complaint intent. The legacy default remains email.
+    active_pending = state.get("pending_ticket")
+    if active_pending and active_pending.get("step") == "customer_email":
+        if _ticket_email_required(state.get("company_id"), intent):
+            reply = (
+                "I'm sorry you're experiencing this issue. "
+                "Please provide your email address so our support team can send updates."
+            )
+            return _save_and_return(
+                state, history, user_message, reply,
+                ticket_created=False,
+                awaiting_email=True,
+                conversation_status="collecting_customer_email",
+            )
+        active_pending["step"] = "additional_details"
+
     # ------------------------------------------------
     # STEP 8: PROFESSIONAL CONVERSATION FOR HUMAN-REQUIRED ISSUES
     # ------------------------------------------------
