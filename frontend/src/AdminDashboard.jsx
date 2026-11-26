@@ -983,7 +983,7 @@ export default function AdminDashboard({ onBack, session, chatbot }) {
             </section>
             <section style={{ background: "#ffffff", border: "1px solid #e5e7eb", borderRadius: 10, padding: 20, marginBottom: 18 }}>
               <h2 style={{ fontSize: 19, marginTop: 0 }}>Ticket Information Builder</h2>
-              <p style={{ color: "#6b7280", fontSize: 13 }}>Choose what this company's chatbot collects for every ticket and for individual categories. Email is not mandatory unless you add it as a required field.</p>
+              <p style={{ color: "#6b7280", fontSize: 13 }}>Choose what this company's chatbot collects for every ticket and for individual categories. Required fields must be provided. Optional fields are asked conversationally but customers can reply SKIP. Email is not mandatory unless you add it as a required field.</p>
               <h3>Information for every ticket</h3>
               {ticketIntake.global_fields.map((field, index) => renderIntakeFieldEditor(field, index, "global"))}
               <button type="button" onClick={() => addIntakeField("global")} style={{ ...buttonStyle, marginTop: 10 }}>+ Add global field</button>
