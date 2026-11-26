@@ -184,12 +184,32 @@ export default function AdminDashboard({ onBack, session, chatbot }) {
 
   const updateIntakeField = (scope, index, property, value, categoryIndex = -1) => {
     setTicketIntake(current => {
+      const updateField = (field) => {
+        const next = { ...field, [property]: value };
+        // Changing a field's data type must also change its internal key and
+        // default customer-facing question. Otherwise a phone field can still
+        // be treated as the legacy "email" field by the ticket workflow.
+        if (property === "type") {
+          if (field.key === "email" || field.key === "phone" || field.key?.startsWith("custom_field_")) {
+            next.key = value === "email" ? "email" : value === "phone" ? "phone" : `custom_field_${Date.now().toString(36)}`;
+          }
+          if (!field.prompt || /email address|phone number|provide this information/i.test(field.prompt)) {
+            next.prompt = value === "email"
+              ? "What email address should our support team use to send you updates?"
+              : value === "phone"
+                ? "What phone number can our support team use to contact you?"
+                : "Could you provide this information?";
+          }
+          if (value === "email" || value === "phone") next.required = true;
+        }
+        return next;
+      };
       if (scope === "global") {
-        const global_fields = [...current.global_fields]; global_fields[index] = { ...global_fields[index], [property]: value };
+        const global_fields = [...current.global_fields]; global_fields[index] = updateField(global_fields[index]);
         return { ...current, global_fields };
       }
       const categories = [...current.categories]; const fields = [...(categories[categoryIndex].fields || [])];
-      fields[index] = { ...fields[index], [property]: value }; categories[categoryIndex] = { ...categories[categoryIndex], fields };
+      fields[index] = updateField(fields[index]); categories[categoryIndex] = { ...categories[categoryIndex], fields };
       return { ...current, categories };
     });
   };
@@ -222,7 +242,7 @@ export default function AdminDashboard({ onBack, session, chatbot }) {
       </select>
       <button type="button" onClick={() => removeIntakeField(scope, index, categoryIndex)} style={{ border: "1px solid #dc2626", color: "#dc2626", background: "white", borderRadius: 6, padding: "8px 10px" }}>Remove</button>
       <label style={{ gridColumn: "1 / -1", display: "flex", gap: 8, alignItems: "center", fontSize: 13 }}>
-        <input type="checkbox" checked={Boolean(field.required)} onChange={e => updateIntakeField(scope, index, "required", e.target.checked, categoryIndex)} /> Required <span style={{ color: "#6b7280" }}>Key: {field.key}</span>
+        <input type="checkbox" checked={Boolean(field.required)} onChange={e => updateIntakeField(scope, index, "required", e.target.checked, categoryIndex)} /> Required <span style={{ color: "#6b7280" }}>Field key: {field.key} · Changing the type updates its key and suggested question.</span>
       </label>
       {field.type === "select" && <input value={(field.options || []).join(", ")} onChange={e => updateIntakeField(scope, index, "options", e.target.value.split(",").map(v => v.trim()).filter(Boolean), categoryIndex)} placeholder="Dropdown options, comma separated" style={{ ...inputStyle, gridColumn: "1 / -1", margin: 0 }} />}
     </div>
