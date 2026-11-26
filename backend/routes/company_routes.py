@@ -18,7 +18,7 @@ from services.company_smtp_service import encrypt_password, test_company_smtp
 
 from database.database import get_db
 from services.workspace_auth import get_workspace_company, get_deletion_actor, record_deletion
-from database.models import Company, CompanyEmailVerification, Chatbot, OrganizationSettings, SupportEmailVerification
+from database.models import Company, CompanyEmailVerification, Chatbot, OrganizationSettings, SupportEmailVerification, TicketConversationSettings
 from services.email_service import send_verification_email
 from services.company_service import (
     create_company,
@@ -317,6 +317,60 @@ def update_historical_solution_timeout(
         "message": "Historical solution timeout settings updated.",
         "enabled": company.historical_solution_timeout_enabled,
         "timeout_hours": company.historical_solution_timeout_hours,
+    }
+
+
+
+@router.get("/current/ticket-conversation-timeout")
+def get_ticket_conversation_timeout(
+    db: Session = Depends(get_db),
+    authorization: str = Header(default=None),
+    x_company_id: int = Header(default=None, alias="X-Company-ID"),
+):
+    workspace_company = get_workspace_company(authorization, x_company_id, db)
+    if not workspace_company:
+        raise HTTPException(status_code=404, detail="Company not found.")
+    settings = db.query(TicketConversationSettings).filter(
+        TicketConversationSettings.company_id == workspace_company["id"]
+    ).first()
+    return {
+        "enabled": settings.enabled if settings else True,
+        "timeout_minutes": settings.timeout_minutes if settings else 2,
+    }
+
+
+@router.patch("/current/ticket-conversation-timeout")
+def update_ticket_conversation_timeout(
+    data: dict,
+    db: Session = Depends(get_db),
+    authorization: str = Header(default=None),
+    x_company_id: int = Header(default=None, alias="X-Company-ID"),
+):
+    workspace_company = get_workspace_company(authorization, x_company_id, db)
+    if not workspace_company:
+        raise HTTPException(status_code=404, detail="Company not found.")
+
+    enabled = data.get("enabled", True)
+    timeout_minutes = data.get("timeout_minutes", 2)
+    if not isinstance(enabled, bool):
+        raise HTTPException(status_code=400, detail="'enabled' must be true or false.")
+    if isinstance(timeout_minutes, bool) or not isinstance(timeout_minutes, int) or not 1 <= timeout_minutes <= 30:
+        raise HTTPException(status_code=400, detail="Ticket conversation timeout must be between 1 and 30 minutes.")
+
+    settings = db.query(TicketConversationSettings).filter(
+        TicketConversationSettings.company_id == workspace_company["id"]
+    ).first()
+    if not settings:
+        settings = TicketConversationSettings(company_id=workspace_company["id"])
+        db.add(settings)
+    settings.enabled = enabled
+    settings.timeout_minutes = timeout_minutes
+    db.commit()
+    db.refresh(settings)
+    return {
+        "message": "Ticket conversation inactivity settings updated.",
+        "enabled": settings.enabled,
+        "timeout_minutes": settings.timeout_minutes,
     }
 
 
