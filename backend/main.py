@@ -1323,14 +1323,12 @@ def _get_ticket_intake_fields(company_id, intent):
         intent_key = re.sub(r"[^a-z0-9]+", "_", str(intent or "").lower()).strip("_")
         normalized_category = re.sub(r"[^a-z0-9]+", " ", category_name).strip()
         category_aliases = {
-            "order": {"delivery shipping", "orders", "order issue", "order status"},
-            "orders": {"delivery shipping", "order", "order issue", "order status"},
-            "delivery": {"delivery shipping", "order", "orders", "shipping"},
-            "shipping": {"delivery shipping", "order", "orders", "delivery"},
-            "payment": {"payment billing", "billing", "payments"},
-            "refund": {"refunds returns", "returns", "refunds"},
-            "login": {"login authentication", "authentication", "account access"},
-            "technical": {"technical issues", "technical issue", "bug report"},
+            "delivery shipping": {"order", "orders", "order issue", "order status", "delivery", "shipping"},
+            "payment billing": {"payment", "payments", "billing"},
+            "refunds returns": {"refund", "refunds", "return", "returns"},
+            "login authentication": {"login", "authentication", "account access"},
+            "technical issues": {"technical", "technical issue", "bug report"},
+            "account management": {"account", "profile"},
         }
         for category in config.get("categories") or []:
             key = str(category.get("key") or "").lower()
