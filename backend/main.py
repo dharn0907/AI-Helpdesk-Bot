@@ -48,6 +48,7 @@ from database.models import (
     ConversationMessage,
     HistoricalSolutionFeedback,
     HistoricalSolutionAttempt,
+    PendingTicketWorkflow,
 )
 
 def _get_active_company_config(company_id=None):
@@ -1043,7 +1044,13 @@ def _start_ticket_collection(
     reply,
 ):
     """Store ticket details and ask the customer for any missing information."""
+    existing_pending = state.get("pending_ticket") or {}
+    collected_email = (
+        existing_pending.get("customer_email")
+        or state.get("customer_email")
+    )
     state["pending_ticket"] = {
+        "customer_email": collected_email,
         "original_complaint": complaint,
         "additional_details": "",
         "detail_messages": [],
@@ -1186,6 +1193,8 @@ def _finish_ticket_creation(state, history, user_message, session_id, pending_ti
     intervention = pending_ticket["intervention"]
     intervention_confidence = pending_ticket["intervention_confidence"]
 
+    queued_issue = state.pop("queued_separate_issue", None)
+
     state.pop("pending_ticket", None)
     state.pop("duplicate_confirmation", None)
     state.pop("issue_messages", None)
@@ -1193,13 +1202,35 @@ def _finish_ticket_creation(state, history, user_message, session_id, pending_ti
     state.pop("human_escalation_triggered", None)
     state.pop("human_support_issue_pending", None)
 
-    reply = (
-        "Thank you! Your support ticket has been successfully created.\n\n"
-        f"Ticket ID: {ticket_id}\n"
-        f"Registered email: {email}\n\n"
-        "Our human support team will review your complaint "
-        "and send updates to your email address."
-    )
+    if queued_issue:
+        next_pending = dict(pending_ticket)
+        next_pending["original_complaint"] = queued_issue
+        next_pending["issue_summary"] = queued_issue
+        next_pending["additional_details"] = ""
+        next_pending["detail_messages"] = [queued_issue]
+        next_pending["asked_questions"] = []
+        next_pending["step"] = "additional_details"
+        next_pending["historical_attempt_id"] = None
+        next_pending.pop("new_issue_candidate", None)
+        state["pending_ticket"] = next_pending
+
+        reply = (
+            "Your first support ticket has been created successfully.\n\n"
+            f"Ticket ID: {ticket_id}\n"
+            f"Registered email: {email}\n\n"
+            "Now let's work on your separate issue. Please share any details "
+            "that will help our support team."
+        )
+        conversation_status = "ticket_created_next_issue_pending"
+    else:
+        reply = (
+            "Thank you! Your support ticket has been successfully created.\n\n"
+            f"Ticket ID: {ticket_id}\n"
+            f"Registered email: {email}\n\n"
+            "Our human support team will review your complaint "
+            "and send updates to your email address."
+        )
+        conversation_status = "ticket_created"
 
     return _save_and_return(
         state,
@@ -1210,7 +1241,7 @@ def _finish_ticket_creation(state, history, user_message, session_id, pending_ti
         ticket_id=ticket_id,
         intervention=intervention,
         intervention_confidence=intervention_confidence,
-        conversation_status="ticket_created",
+        conversation_status=conversation_status,
         response_source="automatic_ticket_creation",
     )
 
@@ -1283,6 +1314,7 @@ def chat(data: dict):
     )
 
     state = conversation_states.setdefault(state_key, {})
+    print("CHAT STATE TRACE:", state_key, "pending:", (state.get("pending_ticket") or {}).get("step"), "state_id:", id(state))
     history = state.setdefault("history", [])
 
     state["session_id"] = session_id
@@ -1632,6 +1664,98 @@ def chat(data: dict):
     if pending_ticket:
         current_step = pending_ticket.get("step", "additional_details")
 
+        if current_step == "awaiting_new_issue_confirmation":
+            choice = user_message.strip().lower().strip(" .,!?")
+            if choice in {"yes", "y", "separate", "separate issue", "yes separate"}:
+                candidate = pending_ticket.get("new_issue_candidate", "").strip()
+                result = _check_company_domain(candidate, history, state.get("company_id"))
+                decision = result.get("decision", "UNCERTAIN")
+
+                if decision == "OUT_OF_DOMAIN":
+                    pending_ticket.pop("new_issue_candidate", None)
+                    pending_ticket["step"] = "additional_details"
+                    return _save_and_return(
+                        state, history, user_message,
+                        _domain_rejection_message() + "\n\nYour original issue is unchanged.",
+                        ticket_created=False,
+                        conversation_status="new_issue_out_of_domain",
+                    )
+
+                if decision == "UNCERTAIN":
+                    pending_ticket["step"] = "awaiting_new_issue_domain_explanation"
+                    return _save_and_return(
+                        state, history, user_message,
+                        "Please explain how this separate problem relates to this company's products or services.",
+                        ticket_created=False,
+                        conversation_status="new_issue_domain_clarification",
+                    )
+
+                state["queued_separate_issue"] = candidate
+                pending_ticket.pop("new_issue_candidate", None)
+                pending_ticket["step"] = "additional_details"
+                return _save_and_return(
+                    state, history, user_message,
+                    "Understood. I'll keep it separate. Let's finish your current issue first.",
+                    ticket_created=False,
+                    separate_issue_queued=True,
+                    conversation_status="separate_issue_queued",
+                )
+
+            if choice in {"no", "n", "nope", "not separate"}:
+                pending_ticket.pop("new_issue_candidate", None)
+                pending_ticket["step"] = "additional_details"
+                return _save_and_return(
+                    state, history, user_message,
+                    "Okay. I won't add it as a separate issue. Your original complaint remains unchanged.",
+                    ticket_created=False,
+                    conversation_status="new_issue_declined",
+                )
+
+            return _save_and_return(
+                state, history, user_message,
+                "Please answer YES or NO. Is this a separate issue related to this company's products or services?",
+                ticket_created=False,
+                awaiting_new_issue_confirmation=True,
+                conversation_status="clarifying_new_issue",
+            )
+
+        if current_step == "awaiting_new_issue_domain_explanation":
+            candidate = pending_ticket.get("new_issue_candidate", "").strip()
+            result = _check_company_domain(
+                candidate + "\nCustomer explanation: " + user_message.strip(),
+                history, state.get("company_id")
+            )
+            decision = result.get("decision", "UNCERTAIN")
+
+            if decision == "IN_DOMAIN":
+                state["queued_separate_issue"] = candidate
+                pending_ticket.pop("new_issue_candidate", None)
+                pending_ticket["step"] = "additional_details"
+                return _save_and_return(
+                    state, history, user_message,
+                    "Thanks. I'll keep this as a separate support request. Let's finish your current issue first.",
+                    ticket_created=False,
+                    separate_issue_queued=True,
+                    conversation_status="separate_issue_queued",
+                )
+
+            if decision == "OUT_OF_DOMAIN":
+                pending_ticket.pop("new_issue_candidate", None)
+                pending_ticket["step"] = "additional_details"
+                return _save_and_return(
+                    state, history, user_message,
+                    _domain_rejection_message() + "\n\nYour original issue is unchanged.",
+                    ticket_created=False,
+                    conversation_status="new_issue_out_of_domain",
+                )
+
+            return _save_and_return(
+                state, history, user_message,
+                "I still couldn't confirm the connection. Please explain which company product or service this concerns.",
+                ticket_created=False,
+                conversation_status="new_issue_domain_clarification",
+            )
+
         # Ensure older pending conversations have the new fields.
         pending_ticket.setdefault("additional_details", "")
         pending_ticket.setdefault("detail_messages", [])
@@ -1750,6 +1874,19 @@ def chat(data: dict):
                 }
            
 
+            print(
+                "TICKET INVESTIGATION RESULT:",
+                {
+                    "message": user_message,
+                    "pending_step": pending_ticket.get("step"),
+                    "original_complaint": pending_ticket.get("original_complaint"),
+                    "action": interpretation.get("action"),
+                    "confidence": interpretation.get("confidence"),
+                    "next_question": interpretation.get("next_question"),
+                    "clarification_question": interpretation.get("clarification_question"),
+                }
+            )
+
             # Resolve an outstanding contradiction before normal processing.
             if pending_conflicts:
                 resolution_confidence = interpretation.get(
@@ -1818,9 +1955,50 @@ def chat(data: dict):
             action = interpretation.get("action", "UNCERTAIN")
             confidence = interpretation.get("confidence", 0.0)
 
-            # Do not accept uncertain model interpretations as facts.
-            if confidence < 0.65:
-                action = "UNCERTAIN"
+            # Recover clear customer-reported symptoms when Gemini
+            # returns low confidence. Preserve genuine ambiguity.
+            if confidence < 0.65 and action == "UNCERTAIN":
+                message_lower = user_message.lower().strip()
+
+                payment_words = (
+                    "payment", "paid", "charge", "charged", "cherged",
+                    "debit", "debited", "deduct", "deducted", "money",
+                    "transaction", "amount", "billing"
+                )
+                clear_symptoms = (
+                    "twice", "double", "failed", "failure", "declined",
+                    "deducted", "debited", "not received", "missing",
+                    "not working", "doesn't work", "does not work",
+                    "error", "unable", "cannot", "can't", "broken",
+                    "damaged", "delayed", "not credited"
+                )
+
+                is_clear_payment_detail = (
+                    any(word in message_lower for word in payment_words)
+                    and any(word in message_lower for word in clear_symptoms)
+                )
+
+                if is_clear_payment_detail:
+                    action = "ADD_DETAIL"
+                    confidence = 0.70
+                    interpretation["action"] = "ADD_DETAIL"
+                    interpretation["confidence"] = confidence
+                    interpretation["relevant_details"] = user_message.strip()
+                    interpretation["needs_clarification"] = False
+                    interpretation["clarification_question"] = ""
+
+                    if not interpretation.get("issue_summary"):
+                        interpretation["issue_summary"] = (
+                            pending_ticket.get("issue_summary")
+                            or pending_ticket.get("original_complaint", "")
+                        )
+
+                    print(
+                        "TICKET DETAIL RECOVERY: accepted clear payment symptom:",
+                        user_message
+                    )
+                else:
+                    action = "UNCERTAIN"
 
 
             if action == "ADD_DETAIL":
@@ -2068,6 +2246,24 @@ def chat(data: dict):
                     reply,
                     ticket_created=False,
                     conversation_status="collecting_additional_details",
+                )
+
+            if action == "NEW_ISSUE":
+                pending_ticket["step"] = "awaiting_new_issue_confirmation"
+                pending_ticket["new_issue_candidate"] = user_message.strip()
+
+                reply = (
+                    "This sounds like a different support problem from your "
+                    "current issue. I won't combine them into one ticket. "
+                    "Is this a separate issue related to this company's "
+                    "products or services? Please answer YES or NO."
+                )
+
+                return _save_and_return(
+                    state, history, user_message, reply,
+                    ticket_created=False,
+                    awaiting_new_issue_confirmation=True,
+                    conversation_status="clarifying_new_issue",
                 )
 
             if action == "UNRELATED":
@@ -2375,20 +2571,25 @@ def chat(data: dict):
                         conversation_status="awaiting_resolution_feedback",
                     )               
 
-                # No suitable solution found — continue normal ticket process
-                pending_ticket["step"] = "customer_email"
+                # Reuse the email collected before complaint validation.
+                saved_email = (
+                    pending_ticket.get("customer_email")
+                    or state.get("customer_email")
+                )
+                if saved_email and valid_email(saved_email):
+                    pending_ticket["customer_email"] = saved_email
+                    return _finish_ticket_creation(
+                        state, history, user_message, session_id, pending_ticket
+                    )
 
+                pending_ticket["step"] = "customer_email"
                 reply = (
                     "Thank you for confirming the summary. "
                     "Please provide your email address so our support "
                     "team can send you ticket updates."
                 )
-
                 return _save_and_return(
-                    state,
-                    history,
-                    user_message,
-                    reply,
+                    state, history, user_message, reply,
                     ticket_created=False,
                     awaiting_email=True,
                     conversation_status="collecting_customer_email",
@@ -2505,39 +2706,21 @@ def chat(data: dict):
                         conversation_status="collecting_support_issue",
                     )
 
-                # On the third request, skip issue collection and collect email.
-                # The customer is repeatedly insisting on a human. Do not trap them
-                # in the issue-details prompt; proceed with a ticket using a clear
-                # fallback note and collect the email instead.
-                complaint = (
-                    pending_ticket.get("issue_summary")
-                    or pending_ticket.get("original_complaint")
-                    or state.get("last_customer_complaint")
-                    or "Customer repeatedly requested human support; issue description not provided."
-                )
-                pending_ticket["original_complaint"] = complaint
-                pending_ticket["issue_summary"] = complaint
-                pending_ticket["step"] = "customer_email"
-                state["last_customer_complaint"] = complaint
-                state["human_escalation_triggered"] = True
-
-                email = pending_ticket.get("customer_email") or state.get("customer_email")
-                if email and valid_email(email):
-                    pending_ticket["customer_email"] = email
-                    return _finish_ticket_creation(
-                        state, history, user_message, session_id, pending_ticket
-                    )
+                # A human-support request alone is not a complaint.
+                pending_ticket["original_complaint"] = ""
+                pending_ticket["issue_summary"] = ""
+                pending_ticket["step"] = "collecting_support_issue"
+                state["human_escalation_triggered"] = False
 
                 reply = (
-                    "Understood. I'll proceed with a support ticket for human follow-up, "
-                    "even without an issue description. Please provide your email address "
-                    "so the support team can contact you."
+                    "I can connect you with human support. "
+                    "Please describe the actual problem you're experiencing first."
                 )
                 return _save_and_return(
                     state, history, user_message, reply,
                     ticket_created=False,
-                    awaiting_customer_email=True,
-                    conversation_status="collecting_customer_email",
+                    awaiting_issue_details=True,
+                    conversation_status="collecting_support_issue",
                 )
 
             if semantic_category not in {"CUSTOMER_ISSUE", "FOLLOW_UP_ISSUE"}:
@@ -2602,16 +2785,73 @@ def chat(data: dict):
         if current_step == "customer_email":
             email = user_message.strip()
 
-            # Always recognize a valid email before interpreting intent.
             if valid_email(email):
                 pending_ticket["customer_email"] = email
+                state["customer_email"] = email
 
-                return _finish_ticket_creation(
-                    state,
-                    history,
-                    user_message,
-                    session_id,
-                    pending_ticket,
+                complaint = (
+                    pending_ticket.get("original_complaint")
+                    or pending_ticket.get("issue_summary")
+                    or ""
+                ).strip()
+
+                if not complaint:
+                    state.pop("pending_ticket", None)
+                    return _save_and_return(
+                        state, history, user_message,
+                        "Please describe the issue you're experiencing first.",
+                        ticket_created=False,
+                        conversation_status="collecting_complaint",
+                    )
+
+                domain_result = _check_company_domain(
+                    complaint, history, state.get("company_id")
+                )
+                decision = domain_result.get("decision", "UNCERTAIN")
+                print("POST-EMAIL COMPLAINT VALIDATION:", decision)
+
+                if decision != "IN_DOMAIN":
+                    state.pop("pending_ticket", None)
+                    state["issue_messages"] = []
+                    state["last_customer_complaint"] = ""
+                    reply = (
+                        _domain_rejection_message()
+                        if decision == "OUT_OF_DOMAIN"
+                        else
+                        "I couldn't verify how this issue relates to our services. "
+                        "Could you explain that connection?"
+                    )
+                    return _save_and_return(
+                        state, history, user_message, reply,
+                        ticket_created=False,
+                        conversation_status="complaint_not_verified",
+                    )
+
+                try:
+                    intent_result, intervention_result = _classify_issue(complaint)
+                except Exception as exc:
+                    print(f"Post-email issue classification failed: {exc}")
+                    return _save_and_return(
+                        state, history, user_message,
+                        "I couldn't verify the issue just now. Please try again.",
+                        ticket_created=False,
+                        conversation_status="complaint_validation_error",
+                    )
+
+                intent = intent_result["intent"]
+                intervention = intervention_result["intervention"]
+                confidence = intervention_result["confidence"]
+
+                state["last_customer_complaint"] = complaint
+                state["last_customer_intent"] = intent
+                state["last_intervention"] = intervention
+                state["last_intervention_confidence"] = confidence
+
+                return _start_ticket_collection(
+                    state, history, user_message, complaint,
+                    intent, intervention, confidence,
+                    "Thank you. I've verified the issue. "
+                    "Please share any additional details that will help us resolve it.",
                 )
 
             if semantic_human_request:
@@ -2840,12 +3080,28 @@ def chat(data: dict):
                 ),
             )
 
-        # On the third request, proceed even if the customer has not
-        # provided an issue description.
-        issue_was_provided = bool(complaint)
+        # Require a real complaint before human escalation can enter ticket flow.
+        issue_was_provided = bool(complaint and complaint.strip())
+
         if not issue_was_provided:
-            complaint = (
-                "Customer requested human support; issue description not provided."
+            pending_ticket = {
+                **existing_pending,
+                "original_complaint": "",
+                "issue_summary": "",
+                "step": "collecting_support_issue",
+            }
+            state["pending_ticket"] = pending_ticket
+            state["human_escalation_triggered"] = False
+
+            reply = (
+                "I can arrange human support, but first please describe "
+                "the actual issue you're facing."
+            )
+            return _save_and_return(
+                state, history, user_message, reply,
+                ticket_created=False,
+                awaiting_issue_details=True,
+                conversation_status="collecting_support_issue",
             )
 
         pending_ticket = {
@@ -2863,48 +3119,68 @@ def chat(data: dict):
         state["human_escalation_triggered"] = True
         state["pending_ticket"] = pending_ticket
 
-        if not complaint:
-            reply = (
-                "I'll prepare a support ticket for our human support team. Please describe "
-                "the issue you're experiencing so I can include the details."
-            )
-            return _save_and_return(
-                state,
-                history,
-                user_message,
-                reply,
-                ticket_created=False,
-                awaiting_issue_details=True,
-                conversation_status="collecting_support_issue",
-            )
-
         email = existing_pending.get("customer_email") or state.get("customer_email")
         if email and valid_email(email):
             pending_ticket["customer_email"] = email
-            return _finish_ticket_creation(
-                state, history, user_message, session_id, pending_ticket
+            domain_result = _check_company_domain(
+                complaint, history, state.get("company_id")
+            )
+            decision = domain_result.get("decision", "UNCERTAIN")
+
+            if decision != "IN_DOMAIN":
+                state.pop("pending_ticket", None)
+                state["human_escalation_triggered"] = False
+                state["issue_messages"] = []
+                state["last_customer_complaint"] = ""
+                reply = (
+                    _domain_rejection_message()
+                    if decision == "OUT_OF_DOMAIN"
+                    else "I couldn't verify how this issue relates to our services. "
+                         "Could you explain that connection?"
+                )
+                return _save_and_return(
+                    state, history, user_message, reply,
+                    ticket_created=False,
+                    conversation_status="complaint_not_verified",
+                )
+
+            try:
+                intent_result, intervention_result = _classify_issue(complaint)
+            except Exception as exc:
+                print(f"Human-escalation issue classification failed: {exc}")
+                return _save_and_return(
+                    state, history, user_message,
+                    "I couldn't verify the issue just now. Please try again.",
+                    ticket_created=False,
+                    conversation_status="complaint_validation_error",
+                )
+
+            intent = intent_result["intent"]
+            intervention = intervention_result["intervention"]
+            confidence = intervention_result["confidence"]
+            state["last_customer_complaint"] = complaint
+            state["last_customer_intent"] = intent
+            state["last_intervention"] = intervention
+            state["last_intervention_confidence"] = confidence
+
+            return _start_ticket_collection(
+                state, history, user_message, complaint,
+                intent, intervention, confidence,
+                "I've verified the issue. Please share any additional details "
+                "that will help our support team resolve it.",
             )
 
-        if issue_was_provided:
-            reply = (
-                "I've included your issue in the support request. Please provide "
-                "your email address so our support team can contact you."
-            )
-        else:
-            reply = (
-                "You can proceed without describing the issue. Please provide "
-                "your email address so our human support team can contact you."
-            )
+        pending_ticket["step"] = "customer_email"
+        reply = (
+            "Please provide your email address first. I'll verify the issue "
+            "before proceeding with a support ticket."
+        )
         return _save_and_return(
-            state,
-            history,
-            user_message,
-            reply,
+            state, history, user_message, reply,
             ticket_created=False,
             awaiting_customer_email=True,
-            conversation_status="awaiting_customer_email",
+            conversation_status="collecting_customer_email",
         )
-
 
     # STEP 5: NORMAL CHAT AND BUSINESS ENQUIRIES
     # ------------------------------------------------
@@ -2969,7 +3245,8 @@ def chat(data: dict):
     # ------------------------------------------------
 
     
-    if category in {"CUSTOMER_ISSUE", "FOLLOW_UP_ISSUE"}:
+    print("FRESH COMPLAINT BRANCH TRACE:", state_key, "pending:", (state.get("pending_ticket") or {}).get("step"))
+    if category in {"CUSTOMER_ISSUE", "FOLLOW_UP_ISSUE"} and not state.get("pending_ticket"):
         if category == "CUSTOMER_ISSUE" or not state.get("issue_messages"):
             state["issue_messages"] = [user_message]
         else:
@@ -2978,6 +3255,26 @@ def chat(data: dict):
         # Keep the issue context bounded to avoid growing the prompt forever.
         state["issue_messages"] = state["issue_messages"][-8:]
         issue_text = " ".join(state["issue_messages"])
+
+        state["pending_ticket"] = {
+            "original_complaint": issue_text,
+            "issue_summary": issue_text,
+            "additional_details": "",
+            "detail_messages": [],
+            "asked_questions": [],
+            "step": "customer_email",
+        }
+        reply = (
+            "I'm sorry you're experiencing this issue. "
+            "Please provide your email address so I can verify "
+            "the request and help you further."
+        )
+        return _save_and_return(
+            state, history, user_message, reply,
+            ticket_created=False,
+            awaiting_email=True,
+            conversation_status="collecting_customer_email",
+        )
 
         domain_result = _check_company_domain(issue_text, history, state.get("company_id"))
         domain_decision = domain_result.get("decision", "UNCERTAIN")
@@ -3259,3 +3556,4 @@ app.include_router(conversation_router)
 app.include_router(historical_solution_router)
 app.include_router(historical_attempt_router)
 app.include_router(internal_admin_router)
+

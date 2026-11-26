@@ -216,22 +216,25 @@ CRITICAL INVESTIGATION OVERRIDE:
 - If the customer explicitly requests a ticket, respect that request.
 
 
-- Before requesting investigation details, determine whether the
-  latest customer message has a clear and understandable meaning
-  in the context of the conversation.
-- A short statement that contains a number, amount, product or
-  transaction reference is not automatically a clear explanation
-  of the problem.
-- If the customer's statement has multiple plausible meanings,
-  do not choose one based on assumptions.
-- Set action to UNCERTAIN and needs_clarification to true.
-- Ask one simple question that distinguishes between the plausible
-  meanings of the customer's statement.
-- Do not request account usernames, transaction IDs, order IDs,
-  screenshots or other sensitive or identifying details until
-  the nature of the reported problem is sufficiently understood.
-- Once the customer clarifies the problem, continue normal,
-  issue-specific information collection.
+- Understand short customer messages in the context of the
+  original complaint and the complete conversation.
+- If a message clearly describes an event, symptom, result,
+  attempted action, or additional fact related to the complaint,
+  ALWAYS classify it as ADD_DETAIL, even if it is only a few words.
+- Examples: "I was charged twice", "money was deducted",
+  "payment failed", "it shows error 404", and "I cannot log in".
+- Be tolerant of spelling mistakes, grammatical errors,
+  abbreviations, and informal customer language.
+- Do NOT classify a relevant message as UNCERTAIN merely because
+  it is short or lacks technical details.
+- Use UNCERTAIN only when the message genuinely has multiple
+  plausible meanings that cannot be resolved from conversation
+  history.
+- When genuinely uncertain, ask one simple question that
+  distinguishes between those meanings.
+- Do not invent facts or assume an unreported cause.
+- Do not request passwords, OTPs, full card details, or other
+  authentication secrets.
 
 1. Identify important information that is missing for investigating
    THIS PARTICULAR complaint.
@@ -383,6 +386,7 @@ For non-issue messages, do not modify the existing issue information.
         "GREETING",
         "SIDE_QUESTION",
         "UNRELATED",
+        "NEW_ISSUE",
         "COMPLETE",
         "PAUSE",
         "CANCEL",
@@ -469,6 +473,7 @@ For non-issue messages, do not modify the existing issue information.
         "GREETING",
         "SIDE_QUESTION",
         "UNRELATED",
+        "NEW_ISSUE",
         "PAUSE",
         "CANCEL",
     }:
