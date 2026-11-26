@@ -633,6 +633,27 @@ class TicketComment(Base):
 
 
 
+class TicketIntakeConfiguration(Base):
+    """Company-owned ticket categories and configurable customer intake fields."""
+
+    __tablename__ = "ticket_intake_configurations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    company_id = Column(
+        Integer,
+        ForeignKey("companies.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
+    configuration = Column(JSON, nullable=False, default=dict)
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+
 class TicketConversationSettings(Base):
     """Company-level inactivity policy for interrupted ticket conversations."""
 
