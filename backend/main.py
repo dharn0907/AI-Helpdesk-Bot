@@ -3735,16 +3735,16 @@ def chat(data: dict):
     # Explicit order-fulfilment failures are support complaints, not product
     # enquiries or routine shipment lookups. Route these through ticket intake
     # so the company's configured contact fields are collected first.
-    normalized_customer_turn = re.sub(r"\\s+", " ", user_message.lower()).strip()
+    normalized_customer_turn = re.sub(r"\s+", " ", user_message.lower()).strip()
     clear_order_fulfilment_problem = bool(re.search(
-        r"\\b("
+        r"\b(
         r"not delivered|has not delivered|hasn't delivered|"
         r"not yet arrived|has not arrived|hasn't arrived|"
         r"never arrived|not received|haven't received|have not received|"
         r"still waiting for (?:my )?(?:order|package|delivery)|"
         r"delivery is delayed|order is delayed|package is missing|"
         r"wrong item (?:was )?delivered|damaged (?:item|product|package)"
-        r")\\b",
+        r")\b",
         normalized_customer_turn,
     ))
     if clear_order_fulfilment_problem:
