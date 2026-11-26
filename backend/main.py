@@ -1283,7 +1283,7 @@ def _ticket_additional_details_for_storage(pending_ticket, company_id=None):
         )
 
     custom_fields = _ticket_custom_fields_for_storage(
-        pending_ticket, pending_ticket.get("company_id")
+        pending_ticket, company_id
     )
     if custom_fields:
         sections.append(
@@ -1467,7 +1467,6 @@ def _finish_ticket_creation(state, history, user_message, session_id, pending_ti
         reply = (
             "Your first support ticket has been created successfully.\n\n"
             f"Ticket ID: {ticket_id}\n"
-            f"Registered email: {email}\n\n"
             "Now let's work on your separate issue. Please share any details "
             "that will help our support team."
         )
@@ -1476,9 +1475,11 @@ def _finish_ticket_creation(state, history, user_message, session_id, pending_ti
         reply = (
             "Thank you! Your support ticket has been successfully created.\n\n"
             f"Ticket ID: {ticket_id}\n"
-            f"Registered email: {email}\n\n"
-            "Our human support team will review your complaint "
-            "and send updates to your email address."
+            + (
+                f"Updates will be sent to {email}."
+                if email else
+                "The support team will use the contact information you provided."
+            )
         )
         conversation_status = "ticket_created"
 
