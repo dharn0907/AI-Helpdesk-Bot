@@ -2963,6 +2963,69 @@ def chat(data: dict):
         }.get(first_intent, "UNCERTAIN")
 
     print("FINAL ROUTING CATEGORY:", category)
+
+    # A support intent is not automatically a sufficiently described complaint.
+    # Keep vague statements in normal conversation until the customer explains
+    # what actually happened; only then begin email collection.
+    normalized_issue_message = re.sub(
+        r"\\s+", " ", user_message.lower()
+    ).strip(" .,!?")
+    generic_issue_statements = {
+        "i have some issue",
+        "i have an issue",
+        "i have some issues",
+        "i have a problem",
+        "i have some problem",
+        "there is an issue",
+        "there is a problem",
+        "i am facing an issue",
+        "i am facing a problem",
+        "facing some issue",
+        "facing a problem",
+        "some issue",
+        "some problem",
+        "an issue",
+        "a problem",
+    }
+    topic_only_statement = bool(re.match(
+        r"^(?:(?:it|this|that) is )?(?:just )?(?:related to|about|regarding) "
+        r"(?:the )?[a-z][a-z /&-]{1,40}$",
+        normalized_issue_message,
+    ))
+
+    if (
+        category in {"CUSTOMER_ISSUE", "FOLLOW_UP_ISSUE"}
+        and (
+            normalized_issue_message in generic_issue_statements
+            or topic_only_statement
+        )
+    ):
+        if "payment" in normalized_issue_message or "billing" in normalized_issue_message:
+            reply = (
+                "Understood — this is about payment. What exactly happened? "
+                "For example, was the payment declined, was money deducted "
+                "without confirmation, or were you charged more than once?"
+            )
+        else:
+            reply = (
+                "I can help with that. What exactly happened? "
+                "Please describe what you were trying to do and what went wrong."
+            )
+
+        print(
+            "VAGUE COMPLAINT CLARIFICATION:",
+            normalized_issue_message,
+        )
+        return _save_and_return(
+            state,
+            history,
+            user_message,
+            reply,
+            ticket_created=False,
+            awaiting_issue_details=True,
+            conversation_status="clarifying_complaint",
+            response_source="vague_complaint_clarification",
+        )
             # ------------------------------------------------
 
     # ------------------------------------------------
