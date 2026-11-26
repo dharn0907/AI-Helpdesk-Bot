@@ -66,6 +66,10 @@ export default function AdminDashboard({ onBack, session, chatbot }) {
   const [ticketTimeoutMinutes, setTicketTimeoutMinutes] = useState("2");
   const [ticketTimeoutLoading, setTicketTimeoutLoading] = useState(false);
   const [ticketTimeoutMessage, setTicketTimeoutMessage] = useState("");
+  const [ticketIntake, setTicketIntake] = useState({ global_fields: [], categories: [] });
+  const [ticketIntakeLoading, setTicketIntakeLoading] = useState(false);
+  const [ticketIntakeMessage, setTicketIntakeMessage] = useState("");
+
 
 
   const headers = (extra = {}) => ({
@@ -148,6 +152,81 @@ export default function AdminDashboard({ onBack, session, chatbot }) {
       setTicketTimeoutLoading(false);
     }
   };
+
+  const loadTicketIntake = async () => {
+    const response = await fetch(`${API}/companies/current/ticket-intake`, { headers: headers() });
+    const data = await readResponse(response);
+    setTicketIntake({ global_fields: Array.isArray(data.global_fields) ? data.global_fields : [], categories: Array.isArray(data.categories) ? data.categories : [] });
+  };
+
+  const saveTicketIntake = async () => {
+    setTicketIntakeLoading(true);
+    setTicketIntakeMessage("");
+    try {
+      const response = await fetch(`${API}/companies/current/ticket-intake`, { method: "PUT", headers: headers(), body: JSON.stringify(ticketIntake) });
+      const data = await readResponse(response);
+      setTicketIntake(data.configuration || ticketIntake);
+      setTicketIntakeMessage(data.message || "Ticket information settings saved.");
+    } catch (err) {
+      setTicketIntakeMessage(err.message || "Could not save ticket information settings.");
+    } finally { setTicketIntakeLoading(false); }
+  };
+
+  const addIntakeField = (scope, categoryIndex = -1) => {
+    const field = { key: `custom_field_${Date.now().toString(36)}`, label: "New information", type: "text", required: true, prompt: "Could you provide this information?" };
+    setTicketIntake(current => {
+      if (scope === "global") return { ...current, global_fields: [...current.global_fields, field] };
+      const categories = [...current.categories];
+      categories[categoryIndex] = { ...categories[categoryIndex], fields: [...(categories[categoryIndex].fields || []), field] };
+      return { ...current, categories };
+    });
+  };
+
+  const updateIntakeField = (scope, index, property, value, categoryIndex = -1) => {
+    setTicketIntake(current => {
+      if (scope === "global") {
+        const global_fields = [...current.global_fields]; global_fields[index] = { ...global_fields[index], [property]: value };
+        return { ...current, global_fields };
+      }
+      const categories = [...current.categories]; const fields = [...(categories[categoryIndex].fields || [])];
+      fields[index] = { ...fields[index], [property]: value }; categories[categoryIndex] = { ...categories[categoryIndex], fields };
+      return { ...current, categories };
+    });
+  };
+
+  const removeIntakeField = (scope, index, categoryIndex = -1) => {
+    setTicketIntake(current => {
+      if (scope === "global") return { ...current, global_fields: current.global_fields.filter((_, i) => i !== index) };
+      const categories = [...current.categories]; categories[categoryIndex] = { ...categories[categoryIndex], fields: (categories[categoryIndex].fields || []).filter((_, i) => i !== index) };
+      return { ...current, categories };
+    });
+  };
+
+  const addIntakeCategory = () => {
+    const key = `category_${Date.now().toString(36)}`;
+    setTicketIntake(current => ({ ...current, categories: [...current.categories, { key, label: "New ticket category", fields: [] }] }));
+  };
+
+  const updateIntakeCategory = (index, property, value) => {
+    setTicketIntake(current => { const categories = [...current.categories]; categories[index] = { ...categories[index], [property]: value }; return { ...current, categories }; });
+  };
+
+  const removeIntakeCategory = (index) => setTicketIntake(current => ({ ...current, categories: current.categories.filter((_, i) => i !== index) }));
+
+  const renderIntakeFieldEditor = (field, index, scope, categoryIndex = -1) => (
+    <div key={field.key || index} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 130px auto", gap: 8, alignItems: "center", padding: 10, border: "1px solid #e5e7eb", borderRadius: 8, marginTop: 8 }}>
+      <input value={field.label || ""} onChange={e => updateIntakeField(scope, index, "label", e.target.value, categoryIndex)} placeholder="Field label" style={{ ...inputStyle, margin: 0 }} />
+      <input value={field.prompt || ""} onChange={e => updateIntakeField(scope, index, "prompt", e.target.value, categoryIndex)} placeholder="Question the bot asks" style={{ ...inputStyle, margin: 0 }} />
+      <select value={field.type || "text"} onChange={e => updateIntakeField(scope, index, "type", e.target.value, categoryIndex)} style={{ ...inputStyle, margin: 0 }}>
+        {["text", "textarea", "email", "phone", "number", "date", "select"].map(type => <option key={type} value={type}>{type}</option>)}
+      </select>
+      <button type="button" onClick={() => removeIntakeField(scope, index, categoryIndex)} style={{ border: "1px solid #dc2626", color: "#dc2626", background: "white", borderRadius: 6, padding: "8px 10px" }}>Remove</button>
+      <label style={{ gridColumn: "1 / -1", display: "flex", gap: 8, alignItems: "center", fontSize: 13 }}>
+        <input type="checkbox" checked={Boolean(field.required)} onChange={e => updateIntakeField(scope, index, "required", e.target.checked, categoryIndex)} /> Required <span style={{ color: "#6b7280" }}>Key: {field.key}</span>
+      </label>
+      {field.type === "select" && <input value={(field.options || []).join(", ")} onChange={e => updateIntakeField(scope, index, "options", e.target.value.split(",").map(v => v.trim()).filter(Boolean), categoryIndex)} placeholder="Dropdown options, comma separated" style={{ ...inputStyle, gridColumn: "1 / -1", margin: 0 }} />}
+    </div>
+  );
 
   const loadSmtpSettings = async () => {
     const response = await fetch(`${API}/companies/smtp-settings`, {
@@ -258,6 +337,10 @@ export default function AdminDashboard({ onBack, session, chatbot }) {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    loadTicketIntake().catch(err => setTicketIntakeMessage(err.message));
+  }, [session.token, session.company.id]);
 
   useEffect(() => {
     setCompanyId(session.company.id);
@@ -898,6 +981,32 @@ export default function AdminDashboard({ onBack, session, chatbot }) {
                 )}
               </form>
             </section>
+            <section style={{ background: "#ffffff", border: "1px solid #e5e7eb", borderRadius: 10, padding: 20, marginBottom: 18 }}>
+              <h2 style={{ fontSize: 19, marginTop: 0 }}>Ticket Information Builder</h2>
+              <p style={{ color: "#6b7280", fontSize: 13 }}>Choose what this company's chatbot collects for every ticket and for individual categories. Email is not mandatory unless you add it as a required field.</p>
+              <h3>Information for every ticket</h3>
+              {ticketIntake.global_fields.map((field, index) => renderIntakeFieldEditor(field, index, "global"))}
+              <button type="button" onClick={() => addIntakeField("global")} style={{ ...buttonStyle, marginTop: 10 }}>+ Add global field</button>
+              <div style={{ borderTop: "1px solid #e5e7eb", margin: "20px 0" }} />
+              <h3>Ticket categories and their fields</h3>
+              {ticketIntake.categories.map((category, categoryIndex) => (
+                <div key={category.key || categoryIndex} style={{ border: "1px solid #d1d5db", borderRadius: 8, padding: 14, marginTop: 12 }}>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <input value={category.label || ""} onChange={e => updateIntakeCategory(categoryIndex, "label", e.target.value)} placeholder="Category name" style={{ ...inputStyle, margin: 0 }} />
+                    <button type="button" onClick={() => removeIntakeCategory(categoryIndex)} style={{ border: "1px solid #dc2626", color: "#dc2626", background: "white", borderRadius: 6, padding: "8px 10px" }}>Delete category</button>
+                  </div>
+                  <p style={{ color: "#6b7280", fontSize: 12 }}>Category key: {category.key}</p>
+                  {(category.fields || []).map((field, index) => renderIntakeFieldEditor(field, index, "category", categoryIndex))}
+                  <button type="button" onClick={() => addIntakeField("category", categoryIndex)} style={{ ...buttonStyle, marginTop: 10 }}>+ Add category field</button>
+                </div>
+              ))}
+              <button type="button" onClick={addIntakeCategory} style={{ ...buttonStyle, marginTop: 12 }}>+ Generate ticket category</button>
+              <div style={{ marginTop: 14 }}>
+                <button type="button" onClick={saveTicketIntake} disabled={ticketIntakeLoading} style={buttonStyle}>{ticketIntakeLoading ? "Saving..." : "Save Ticket Information Settings"}</button>
+                {ticketIntakeMessage && <p style={{ color: "#2563eb", fontSize: 13 }}>{ticketIntakeMessage}</p>}
+              </div>
+            </section>
+
             <section style={{
               background: "#ffffff",
               border: "1px solid #e5e7eb",
