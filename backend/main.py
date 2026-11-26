@@ -2213,7 +2213,7 @@ def chat(data: dict):
             state["human_escalation_count"] = escalation_count
 
             email = pending_ticket.get("customer_email") or state.get("customer_email")
-            if not email or not valid_email(email):
+            if _ticket_email_required(state.get("company_id"), pending_ticket.get("intent")) and (not email or not valid_email(email)):
                 pending_ticket["step"] = "customer_email"
                 state["human_escalation_count"] = min(escalation_count, 2)
                 return _save_and_return(
@@ -2437,7 +2437,7 @@ def chat(data: dict):
             state["human_support_issue_pending"] = True
 
             email = pending_ticket.get("customer_email") or state.get("customer_email")
-            if not email or not valid_email(email):
+            if _ticket_email_required(state.get("company_id"), pending_ticket.get("intent")) and (not email or not valid_email(email)):
                 pending_ticket["step"] = "customer_email"
                 state["human_escalation_count"] = min(escalation_count, 2)
                 return _save_and_return(
@@ -3705,7 +3705,7 @@ def chat(data: dict):
             "human_support_requested": True,
         }
 
-        if not email or not valid_email(email):
+        if _ticket_email_required(state.get("company_id"), pending_ticket.get("intent")) and (not email or not valid_email(email)):
             pending_ticket["step"] = "customer_email"
             state["pending_ticket"] = pending_ticket
             return _save_and_return(
