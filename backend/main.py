@@ -1323,12 +1323,15 @@ def _ticket_email_required(company_id, intent):
     )
 
 
-def _next_missing_ticket_field(pending_ticket, company_id):
+def _next_missing_ticket_field(pending_ticket, company_id, include_optional=False):
     values = pending_ticket.setdefault("custom_fields", {})
+    skipped = set(pending_ticket.get("skipped_intake_fields") or [])
     for field in _get_ticket_intake_fields(company_id, pending_ticket.get("intent")):
-        if not field.get("required", False):
-            continue
         key = field.get("key")
+        if key in skipped:
+            continue
+        if not field.get("required", False) and not include_optional:
+            continue
         value = pending_ticket.get("customer_email") if (key == "email" or field.get("type") == "email") else values.get(key)
         if value is None or not str(value).strip():
             return field
@@ -1361,7 +1364,7 @@ def _ask_for_ticket_field(state, history, user_message, pending_ticket, field):
 def _finish_ticket_creation(state, history, user_message, session_id, pending_ticket):
     """Check for duplicates and create the ticket when appropriate."""
     email = pending_ticket.get("customer_email")
-    missing_field = _next_missing_ticket_field(pending_ticket, state.get("company_id"))
+    missing_field = _next_missing_ticket_field(pending_ticket, state.get("company_id"), include_optional=not state.get("_timeout_submission"))
     if missing_field:
         return _ask_for_ticket_field(state, history, user_message, pending_ticket, missing_field)
 
@@ -2070,6 +2073,13 @@ def chat(data: dict):
             pending_ticket["step"] = "additional_details"
             return _finish_ticket_creation(state, history, user_message, session_id, pending_ticket)
         value = user_message.strip()
+        if value.lower() in {"skip", "skip this", "prefer not to say", "rather not say"}:
+            if field.get("required", False):
+                return _save_and_return(state, history, user_message, f"{field.get('label', 'This information')} is required to submit the ticket. Could you provide it?", ticket_created=False, awaiting_custom_field=True, conversation_status="collecting_ticket_information")
+            pending_ticket.setdefault("skipped_intake_fields", []).append(field_key)
+            pending_ticket.pop("current_intake_field", None)
+            pending_ticket["step"] = "additional_details"
+            return _finish_ticket_creation(state, history, user_message, session_id, pending_ticket)
         field_type = field.get("type", "text")
         if field_type == "email" or field_key == "email":
             if not valid_email(value):
