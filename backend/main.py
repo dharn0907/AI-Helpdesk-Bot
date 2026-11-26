@@ -1403,6 +1403,40 @@ def _finish_ticket_creation(state, history, user_message, session_id, pending_ti
 # CHAT ENDPOINT
 # ------------------------------------------------
 
+@app.get("/chat/resume")
+def resume_ticket_conversation(session_id: str, bot_public_id: str):
+    """Return only a still-pending ticket conversation for widget restoration."""
+    db = SessionLocal()
+    try:
+        from database.models import Chatbot
+        chatbot = db.query(Chatbot).filter(
+            Chatbot.public_id == bot_public_id,
+            Chatbot.status == "active",
+        ).first()
+        if not chatbot:
+            return {"messages": []}
+        pending = db.query(PendingTicketConversation).filter(
+            PendingTicketConversation.company_id == chatbot.organization_id,
+            PendingTicketConversation.chatbot_id == chatbot.id,
+            PendingTicketConversation.session_id == session_id,
+            PendingTicketConversation.status.in_(["active", "awaiting_confirmation"]),
+        ).first()
+        if not pending or not isinstance(pending.state_data, dict):
+            return {"messages": []}
+        history = pending.state_data.get("history") or []
+        messages = [
+            {
+                "sender": "user" if item.get("role") == "user" else "bot",
+                "text": item.get("content", ""),
+            }
+            for item in history
+            if item.get("role") in {"user", "assistant"} and item.get("content")
+        ]
+        return {"messages": messages}
+    finally:
+        db.close()
+
+
 @app.post("/chat")
 def chat(data: dict):
     user_message = data.get("message", "")
