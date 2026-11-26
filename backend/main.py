@@ -1321,11 +1321,22 @@ def _get_ticket_intake_fields(company_id, intent):
                     field["prompt"] = "What phone number can our support team use to contact you?"
         category_name = get_ticket_category(intent or "").strip().lower()
         intent_key = re.sub(r"[^a-z0-9]+", "_", str(intent or "").lower()).strip("_")
+        normalized_category = re.sub(r"[^a-z0-9]+", " ", category_name).strip()
+        category_aliases = {
+            "order": {"delivery shipping", "orders", "order issue", "order status"},
+            "orders": {"delivery shipping", "order", "order issue", "order status"},
+            "delivery": {"delivery shipping", "order", "orders", "shipping"},
+            "shipping": {"delivery shipping", "order", "orders", "delivery"},
+            "payment": {"payment billing", "billing", "payments"},
+            "refund": {"refunds returns", "returns", "refunds"},
+            "login": {"login authentication", "authentication", "account access"},
+            "technical": {"technical issues", "technical issue", "bug report"},
+        }
         for category in config.get("categories") or []:
             key = str(category.get("key") or "").lower()
             label = re.sub(r"[^a-z0-9]+", " ", str(category.get("label") or "").lower()).strip()
-            normalized_category = re.sub(r"[^a-z0-9]+", " ", category_name).strip()
-            if key == intent_key or (label and label == normalized_category):
+            alias_match = label in category_aliases.get(normalized_category, set())
+            if key == intent_key or (label and (label == normalized_category or alias_match)):
                 category_fields = list(category.get("fields") or [])
                 for field in category_fields:
                     if field.get("key") == "email" and field.get("type") == "phone":
