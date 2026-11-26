@@ -1960,12 +1960,12 @@ def chat(data: dict):
             # the customer to explain the same information again.
             message_lower = user_message.lower().strip()
             time_detail_pattern = (
-                r"\\b(yesterday|today|this morning|this afternoon|"
+                r"\b(yesterday|today|this morning|this afternoon|"
                 r"this evening|last night|last evening|last week|"
                 r"this week|a few minutes ago|few minutes ago|"
                 r"an hour ago|hours ago|days ago|weeks ago|"
                 r"on monday|on tuesday|on wednesday|on thursday|"
-                r"on friday|on saturday|on sunday)\\b"
+                r"on friday|on saturday|on sunday)\b"
             )
             if (
                 action == "UNCERTAIN"
