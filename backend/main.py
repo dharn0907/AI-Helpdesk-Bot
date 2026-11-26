@@ -1300,6 +1300,13 @@ def _get_ticket_intake_fields(company_id, intent):
         db.close()
 
 
+def _ticket_email_required(company_id, intent):
+    return any(
+        field.get("key") == "email" and field.get("required", False)
+        for field in _get_ticket_intake_fields(company_id, intent)
+    )
+
+
 def _next_missing_ticket_field(pending_ticket, company_id):
     values = pending_ticket.setdefault("custom_fields", {})
     for field in _get_ticket_intake_fields(company_id, pending_ticket.get("intent")):
@@ -1974,7 +1981,7 @@ def chat(data: dict):
         }
     ):
         email = pending_ticket.get("customer_email") or state.get("customer_email")
-        if not email or not valid_email(email):
+        if _ticket_email_required(state.get("company_id"), pending_ticket.get("intent")) and (not email or not valid_email(email)):
             pending_ticket["step"] = "customer_email"
             return _save_and_return(
                 state, history, user_message,
@@ -2021,6 +2028,36 @@ def chat(data: dict):
     # C. Confirm the issue summary
     # --------------------------------------------
 
+
+    if pending_ticket and current_step == "collecting_custom_fields":
+        field_key = pending_ticket.get("current_intake_field")
+        field = next((item for item in _get_ticket_intake_fields(state.get("company_id"), pending_ticket.get("intent")) if item.get("key") == field_key), None)
+        if not field:
+            pending_ticket.pop("current_intake_field", None)
+            pending_ticket["step"] = "additional_details"
+            return _finish_ticket_creation(state, history, user_message, session_id, pending_ticket)
+        value = user_message.strip()
+        field_type = field.get("type", "text")
+        if field_type == "email":
+            if not valid_email(value):
+                return _save_and_return(state, history, user_message, "That doesn't look like a valid email address. Could you check it and send it again?", ticket_created=False, awaiting_custom_field=True, conversation_status="collecting_ticket_information")
+            pending_ticket["customer_email"] = value
+            state["customer_email"] = value
+        elif field_type == "phone":
+            digits = re.sub(r"\\D", "", value)
+            if len(digits) < 7 or len(digits) > 15:
+                return _save_and_return(state, history, user_message, "Could you check that phone number and send it again, including the country code if needed?", ticket_created=False, awaiting_custom_field=True, conversation_status="collecting_ticket_information")
+            pending_ticket.setdefault("custom_fields", {})[field_key] = value
+        elif field_type == "select":
+            options = [str(option).strip().lower() for option in field.get("options", [])]
+            if value.lower() not in options:
+                return _save_and_return(state, history, user_message, "Please choose one of these options: " + ", ".join(str(option) for option in field.get("options", [])), ticket_created=False, awaiting_custom_field=True, conversation_status="collecting_ticket_information")
+            pending_ticket.setdefault("custom_fields", {})[field_key] = value
+        else:
+            pending_ticket.setdefault("custom_fields", {})[field_key] = value
+        pending_ticket.pop("current_intake_field", None)
+        pending_ticket["step"] = "additional_details"
+        return _finish_ticket_creation(state, history, user_message, session_id, pending_ticket)
 
     if current_step == "awaiting_summary_confirmation":
         choice = user_message.strip().lower()
@@ -2125,17 +2162,8 @@ def chat(data: dict):
                     state, history, user_message, session_id, pending_ticket
                 )
 
-            pending_ticket["step"] = "customer_email"
-            reply = (
-                "Thank you for confirming the summary. "
-                "Please provide your email address so our support "
-                "team can send you ticket updates."
-            )
-            return _save_and_return(
-                state, history, user_message, reply,
-                ticket_created=False,
-                awaiting_email=True,
-                conversation_status="collecting_customer_email",
+            return _finish_ticket_creation(
+                state, history, user_message, session_id, pending_ticket
             )
 
         if choice in negative_choices:
