@@ -989,10 +989,12 @@ export default function AdminDashboard({ onBack, session, chatbot }) {
               <button type="button" onClick={() => addIntakeField("global")} style={{ ...buttonStyle, marginTop: 10 }}>+ Add global field</button>
               <div style={{ borderTop: "1px solid #e5e7eb", margin: "20px 0" }} />
               <h3>Ticket categories and their fields</h3>
+              <p style={{ color: "#6b7280", fontSize: 12 }}>Use standard category names such as Payment / Billing, Delivery / Shipping, Login / Authentication, Refunds / Returns, Technical Issues, Account Management, Product / Service Questions or Feature Requests. For a custom intent, set its key to the intent name used by your chatbot.</p>
               {ticketIntake.categories.map((category, categoryIndex) => (
                 <div key={category.key || categoryIndex} style={{ border: "1px solid #d1d5db", borderRadius: 8, padding: 14, marginTop: 12 }}>
                   <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                     <input value={category.label || ""} onChange={e => updateIntakeCategory(categoryIndex, "label", e.target.value)} placeholder="Category name" style={{ ...inputStyle, margin: 0 }} />
+                    <input value={category.key || ""} onChange={e => updateIntakeCategory(categoryIndex, "key", e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, "_"))} placeholder="Intent key (e.g. payment_issue)" style={{ ...inputStyle, margin: 0 }} />
                     <button type="button" onClick={() => removeIntakeCategory(categoryIndex)} style={{ border: "1px solid #dc2626", color: "#dc2626", background: "white", borderRadius: 6, padding: "8px 10px" }}>Delete category</button>
                   </div>
                   <p style={{ color: "#6b7280", fontSize: 12 }}>Category key: {category.key}</p>
