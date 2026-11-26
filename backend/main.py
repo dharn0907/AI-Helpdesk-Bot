@@ -3737,7 +3737,7 @@ def chat(data: dict):
     # so the company's configured contact fields are collected first.
     normalized_customer_turn = re.sub(r"\s+", " ", user_message.lower()).strip()
     clear_order_fulfilment_problem = bool(re.search(
-        r"\b(
+        r"\b("
         r"not delivered|has not delivered|hasn't delivered|"
         r"not yet arrived|has not arrived|hasn't arrived|"
         r"never arrived|not received|haven't received|have not received|"
