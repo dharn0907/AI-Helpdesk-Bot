@@ -9,6 +9,7 @@ import uuid
 import asyncio
 from datetime import datetime, timezone
 from fastapi import FastAPI, HTTPException
+from sqlalchemy import text
 from services.zep_memory_service import save_assistant_turn, start_user_turn
 from services.first_level_intent_service import classify_first_level_intent
 from fastapi.middleware.cors import CORSMiddleware
@@ -592,6 +593,12 @@ async def ticket_conversation_timeout_checker():
 @app.on_event("startup")
 async def initialize_knowledge_base_tables():
     Base.metadata.create_all(bind=engine)
+    # create_all does not add columns to existing Supabase tables.
+    with engine.begin() as connection:
+        connection.execute(text(
+            "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS "
+            "custom_fields JSONB NOT NULL DEFAULT '{}'::jsonb"
+        ))
 
     asyncio.create_task(
         historical_solution_timeout_checker()
