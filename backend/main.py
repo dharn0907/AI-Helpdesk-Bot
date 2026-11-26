@@ -560,6 +560,18 @@ def is_small_talk(message):
     return normalized in small_talk_messages
 
 
+def is_explicit_immediate_ticket_request(message):
+    """Recognize a clear instruction to submit the pending support request now."""
+    normalized = re.sub(r"[^a-z0-9' ]+", " ", str(message).lower())
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    patterns = (
+        r"\b(?:raise|create|submit|open|log)\s+(?:a\s+)?ticket\b",
+        r"\b(ticket|support request)\s+(?:now|immediately)\b",
+        r"\braise\s+(?:it|this|the request)\s+now\b",
+    )
+    return any(re.search(pattern, normalized) for pattern in patterns)
+
+
 def is_ticket_cancellation(message):
     """Return True only when the customer explicitly withdraws the support request."""
     normalized = re.sub(r"[^a-z0-9' ]+", " ", str(message).lower())
@@ -1110,7 +1122,10 @@ def _finish_ticket_creation(state, history, user_message, session_id, pending_ti
     """Check for duplicates and create the ticket when appropriate."""
     email = pending_ticket["customer_email"]
 
-    if not pending_ticket.get("force_new_ticket"):
+    if (
+        not pending_ticket.get("force_new_ticket")
+        and not pending_ticket.get("skip_duplicate_check")
+    ):
         try:
             duplicate = _check_duplicate_ticket(
                 pending_ticket,
@@ -1650,6 +1665,65 @@ def chat(data: dict):
 
     pending_ticket = state.get("pending_ticket")
     current_step = (pending_ticket or {}).get("step", "additional_details")
+
+    # An explicit instruction to submit the pending ticket now is a
+    # submission decision, not another request for the same issue details.
+    # If no issue was supplied, create a clearly labelled human-follow-up
+    # ticket rather than inventing a complaint or looping indefinitely.
+    if (
+        pending_ticket
+        and pending_ticket.get("human_support_requested")
+        and is_explicit_immediate_ticket_request(user_message)
+        and current_step in {
+            "customer_email",
+            "human_support_issue_details",
+            "additional_details",
+            "awaiting_summary_confirmation",
+        }
+    ):
+        email = pending_ticket.get("customer_email") or state.get("customer_email")
+        if not email or not valid_email(email):
+            pending_ticket["step"] = "customer_email"
+            return _save_and_return(
+                state, history, user_message,
+                "Absolutely. I can submit the human-support ticket now. "
+                "Please provide your email address so the team can contact you.",
+                ticket_created=False,
+                awaiting_email=True,
+                conversation_status="collecting_customer_email",
+            )
+
+        pending_ticket["customer_email"] = email
+        state["customer_email"] = email
+        complaint = (
+            pending_ticket.get("issue_summary")
+            or pending_ticket.get("original_complaint")
+            or ""
+        ).strip()
+
+        if not complaint:
+            complaint = (
+                "Customer explicitly requested immediate human support "
+                "but did not provide issue details."
+            )
+            pending_ticket["original_complaint"] = complaint
+            pending_ticket["issue_summary"] = complaint
+            pending_ticket["additional_details"] = (
+                "The customer repeatedly requested to speak with a human "
+                "and explicitly instructed the chatbot to raise a ticket "
+                "immediately. No underlying problem details were provided. "
+                "Please contact the customer to identify the issue."
+            )
+            pending_ticket["skip_duplicate_check"] = True
+            pending_ticket["intent"] = pending_ticket.get("intent") or "general_enquiry"
+            pending_ticket["intervention"] = "HUMAN_ONLY"
+            pending_ticket["intervention_confidence"] = 1.0
+
+        pending_ticket["human_support_requested"] = True
+        pending_ticket["summary_confirmed"] = True
+        return _finish_ticket_creation(
+            state, history, user_message, session_id, pending_ticket
+        )
 
     # --------------------------------------------
     # C. Confirm the issue summary
