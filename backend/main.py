@@ -1317,6 +1317,7 @@ def _get_ticket_intake_fields(company_id, intent):
         for field in fields:
             if field.get("key") == "email" and field.get("type") == "phone":
                 field["key"] = "phone"
+                field["required"] = True
                 if "email address" in str(field.get("prompt") or "").lower():
                     field["prompt"] = "What phone number can our support team use to contact you?"
         category_name = get_ticket_category(intent or "").strip().lower()
@@ -1339,6 +1340,7 @@ def _get_ticket_intake_fields(company_id, intent):
                 for field in category_fields:
                     if field.get("key") == "email" and field.get("type") == "phone":
                         field["key"] = "phone"
+                        field["required"] = True
                         if "email address" in str(field.get("prompt") or "").lower():
                             field["prompt"] = "What phone number can our support team use to contact you?"
                 fields.extend(category_fields)
@@ -1365,7 +1367,11 @@ def _next_missing_global_ticket_field(pending_ticket, company_id):
             global_fields = list(config.get("global_fields") or [])
             for field in global_fields:
                 if field.get("key") == "email" and field.get("type") == "phone":
+                    # Legacy builder saved a phone input under the email key
+                    # and often left it optional. Treat this conversion as a
+                    # required contact field so ticket intake cannot skip it.
                     field["key"] = "phone"
+                    field["required"] = True
                     if "email address" in str(field.get("prompt") or "").lower():
                         field["prompt"] = "What phone number can our support team use to contact you?"
         values = pending_ticket.setdefault("custom_fields", {})
