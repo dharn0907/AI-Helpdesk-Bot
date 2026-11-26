@@ -2429,6 +2429,41 @@ def chat(data: dict):
                         conversation_status="collecting_complaint",
                     )
 
+                # Never allow an early "I'm done" to bypass essential
+                # investigation. The model must explicitly mark the gathered
+                # facts sufficient before summary confirmation can begin.
+                if interpretation.get("information_complete") is not True:
+                    missing = interpretation.get("missing_information") or []
+                    follow_up = (
+                        interpretation.get("next_question")
+                        or interpretation.get("clarification_question")
+                        or ""
+                    ).strip()
+                    if not follow_up and missing:
+                        first_missing = str(missing[0]).strip().rstrip(" .?")
+                        follow_up = (
+                            f"To make sure the support team can investigate, "
+                            f"could you share {first_missing}?"
+                        )
+                    if not follow_up:
+                        follow_up = (
+                            "Before I prepare the summary, I need one more "
+                            "useful detail. What happened immediately after "
+                            "the issue occurred?"
+                        )
+
+                    pending_ticket["information_complete"] = False
+                    pending_ticket["missing_information"] = missing
+                    return _save_and_return(
+                        state,
+                        history,
+                        user_message,
+                        follow_up,
+                        ticket_created=False,
+                        awaiting_additional_details=True,
+                        conversation_status="collecting_additional_details",
+                    )
+
                 new_summary = (
                     interpretation.get("issue_summary") or ""
                 ).strip()
