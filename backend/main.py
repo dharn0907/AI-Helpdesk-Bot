@@ -1955,6 +1955,40 @@ def chat(data: dict):
             action = interpretation.get("action", "UNCERTAIN")
             confidence = interpretation.get("confidence", 0.0)
 
+            # A short time expression can directly answer when an active
+            # complaint occurred. Accept it as a detail instead of asking
+            # the customer to explain the same information again.
+            message_lower = user_message.lower().strip()
+            time_detail_pattern = (
+                r"\\b(yesterday|today|this morning|this afternoon|"
+                r"this evening|last night|last evening|last week|"
+                r"this week|a few minutes ago|few minutes ago|"
+                r"an hour ago|hours ago|days ago|weeks ago|"
+                r"on monday|on tuesday|on wednesday|on thursday|"
+                r"on friday|on saturday|on sunday)\\b"
+            )
+            if (
+                action == "UNCERTAIN"
+                and pending_ticket.get("original_complaint")
+                and re.search(time_detail_pattern, message_lower)
+            ):
+                action = "ADD_DETAIL"
+                confidence = max(float(confidence or 0.0), 0.70)
+                interpretation["action"] = action
+                interpretation["confidence"] = confidence
+                interpretation["relevant_details"] = user_message.strip()
+                interpretation["needs_clarification"] = False
+                interpretation["clarification_question"] = ""
+                if not interpretation.get("issue_summary"):
+                    interpretation["issue_summary"] = (
+                        pending_ticket.get("issue_summary")
+                        or pending_ticket.get("original_complaint", "")
+                    )
+                print(
+                    "TICKET DETAIL RECOVERY: accepted time-related detail:",
+                    user_message,
+                )
+
             # Recover clear customer-reported symptoms when Gemini
             # returns low confidence. Preserve genuine ambiguity.
             if confidence < 0.65 and action == "UNCERTAIN":
