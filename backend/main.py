@@ -1678,9 +1678,11 @@ def chat(data: dict):
     # ------------------------------------------------
 
     pending_ticket = state.get("pending_ticket")
+    current_step = (pending_ticket or {}).get("step", "additional_details")
 
-    if pending_ticket:
-        current_step = pending_ticket.get("step", "additional_details")
+    # Email collection is handled by its dedicated handler below. Only
+    # active investigation steps should enter the ticket interpretation engine.
+    if pending_ticket and current_step != "customer_email":
 
         if current_step == "awaiting_new_issue_confirmation":
             choice = user_message.strip().lower().strip(" .,!?")
@@ -2942,7 +2944,7 @@ def chat(data: dict):
     # D. Collect customer email after confirmation
     # --------------------------------------------
 
-    if current_step == "customer_email":
+    if pending_ticket and current_step == "customer_email":
         email = user_message.strip()
 
         if valid_email(email):
