@@ -522,18 +522,6 @@ async def ticket_conversation_timeout_checker():
                 if (now - last_activity).total_seconds() < timeout_minutes * 60:
                     continue
 
-                # A previous process may have created the ticket but stopped
-                # before deleting this pending row. Avoid duplicate submission.
-                existing_ticket = db.query(Ticket).filter(
-                    Ticket.session_id == row.session_id,
-                    Ticket.company_id == row.company_id,
-                    Ticket.chatbot_id == row.chatbot_id,
-                ).first()
-                if existing_ticket:
-                    db.delete(row)
-                    db.commit()
-                    continue
-
                 state = row.state_data if isinstance(row.state_data, dict) else {}
                 pending = state.get("pending_ticket") or {}
                 email = pending.get("customer_email") or state.get("customer_email")
@@ -541,6 +529,21 @@ async def ticket_conversation_timeout_checker():
                     # Preserve the conversation. The customer must provide a
                     # contact email before a support ticket can be submitted.
                     row.status = "awaiting_confirmation"
+                    db.commit()
+                    continue
+                pending["customer_email"] = email
+
+                # Recover safely if a process stopped after creating this
+                # exact ticket but before removing its pending conversation.
+                existing_ticket = db.query(Ticket).filter(
+                    Ticket.session_id == row.session_id,
+                    Ticket.company_id == row.company_id,
+                    Ticket.chatbot_id == row.chatbot_id,
+                    Ticket.customer_email == email,
+                    Ticket.customer_message == (pending.get("original_complaint") or ""),
+                ).first()
+                if existing_ticket:
+                    db.delete(row)
                     db.commit()
                     continue
 
