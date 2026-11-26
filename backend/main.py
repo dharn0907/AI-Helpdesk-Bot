@@ -1844,7 +1844,7 @@ def chat(data: dict):
                 customer_message=user_message,
                 pending_ticket=pending_ticket,
                 conversation_history=history[-10:],
-                company_config=_get_active_company_config(),
+                company_config=_get_active_company_config(state.get("company_id")),
             )
         except Exception as exc:
             print(f"Ticket message interpretation failed: {exc}")
