@@ -1,4 +1,4 @@
-
+ 
 """Database configuration for Supabase PostgreSQL."""
 
 import os
@@ -22,6 +22,9 @@ if not DATABASE_URL:
 engine = create_engine(
     DATABASE_URL,
     pool_pre_ping=True,
+    # Prevent an unreachable/paused Supabase database from hanging startup
+    # for the driver's much longer default connection timeout.
+    connect_args={"connect_timeout": 10},
 )
 
 SessionLocal = sessionmaker(
