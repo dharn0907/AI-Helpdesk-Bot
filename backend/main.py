@@ -2952,7 +2952,11 @@ def chat(data: dict):
                 decision = domain_result.get("decision", "UNCERTAIN")
                 print("POST-EMAIL COMPLAINT VALIDATION:", decision)
 
-                if decision != "IN_DOMAIN":
+                # Reject only complaints the domain validator confidently marks
+                # OUT_OF_DOMAIN. UNCERTAIN is not a rejection: retain the verified
+                # customer email and continue investigating the complaint so a
+                # short opening such as "I have a payment issue" is not discarded.
+                if decision == "OUT_OF_DOMAIN":
                     state.pop("pending_ticket", None)
                     state["issue_messages"] = []
                     state["last_customer_complaint"] = ""
