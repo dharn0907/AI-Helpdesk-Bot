@@ -1265,7 +1265,7 @@ def _check_duplicate_ticket(
 
 
 
-def _ticket_additional_details_for_storage(pending_ticket):
+def _ticket_additional_details_for_storage(pending_ticket, company_id=None):
     """Combine raw customer details and the confirmed issue summary."""
     sections = []
 
@@ -1412,7 +1412,7 @@ def _finish_ticket_creation(state, history, user_message, session_id, pending_ti
     try:
         ticket_id = create_support_ticket(
             customer_message=pending_ticket["original_complaint"],
-            additional_details=_ticket_additional_details_for_storage(pending_ticket),
+            additional_details=_ticket_additional_details_for_storage(pending_ticket, state.get("company_id")),
             customer_email=email,
             custom_fields=_ticket_custom_fields_for_storage(pending_ticket, state.get("company_id")),
             intent=pending_ticket["intent"],
