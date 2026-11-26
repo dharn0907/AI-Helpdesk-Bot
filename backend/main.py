@@ -2059,10 +2059,26 @@ def chat(data: dict):
                     ))
                 )
             )
-            if (
-                pending_ticket.get("original_complaint")
-                and duplicate_charge
-            ):
+            print(
+                "DUPLICATE PAYMENT TRACE:",
+                {
+                    "message": user_message,
+                    "matched": duplicate_charge,
+                    "has_original_complaint": bool(
+                        pending_ticket.get("original_complaint")
+                    ),
+                    "has_issue_summary": bool(
+                        pending_ticket.get("issue_summary")
+                    ),
+                    "pending_step": pending_ticket.get("step"),
+                },
+            )
+            if duplicate_charge:
+                if not pending_ticket.get("original_complaint"):
+                    pending_ticket["original_complaint"] = (
+                        pending_ticket.get("issue_summary")
+                        or "Customer reports a payment issue."
+                    )
                 action = "ADD_DETAIL"
                 interpretation["action"] = "ADD_DETAIL"
                 interpretation["confidence"] = max(
