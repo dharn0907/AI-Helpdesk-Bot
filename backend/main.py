@@ -2038,7 +2038,7 @@ def chat(data: dict):
             # regardless of Gemini confidence so short, clear answers such
             # as "charged two times" never fall through to generic chat.
             normalized_payment_text = re.sub(
-                r"\\s+", " ", user_message.lower()
+                r"\s+", " ", user_message.lower()
             ).strip()
             duplicate_charge = (
                 any(term in normalized_payment_text for term in (
