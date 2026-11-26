@@ -18,7 +18,7 @@ from services.company_smtp_service import encrypt_password, test_company_smtp
 
 from database.database import get_db
 from services.workspace_auth import get_workspace_company, get_deletion_actor, record_deletion
-from database.models import Company, CompanyEmailVerification, Chatbot, OrganizationSettings, SupportEmailVerification, TicketConversationSettings
+from database.models import Company, CompanyEmailVerification, Chatbot, OrganizationSettings, SupportEmailVerification, TicketConversationSettings, TicketIntakeConfiguration
 from services.email_service import send_verification_email
 from services.company_service import (
     create_company,
@@ -371,6 +371,108 @@ def update_ticket_conversation_timeout(
         "message": "Ticket conversation inactivity settings updated.",
         "enabled": settings.enabled,
         "timeout_minutes": settings.timeout_minutes,
+    }
+
+
+def _validate_ticket_intake_configuration(data):
+    if not isinstance(data, dict):
+        raise HTTPException(status_code=400, detail="Configuration must be an object.")
+
+    global_fields = data.get("global_fields", [])
+    categories = data.get("categories", [])
+    if not isinstance(global_fields, list) or not isinstance(categories, list):
+        raise HTTPException(status_code=400, detail="Global fields and categories must be lists.")
+
+    allowed_types = {"text", "textarea", "email", "phone", "number", "date", "select"}
+    def validate_fields(fields, context):
+        if not isinstance(fields, list) or len(fields) > 50:
+            raise HTTPException(status_code=400, detail=f"{context} must contain at most 50 fields.")
+        seen = set()
+        for field in fields:
+            if not isinstance(field, dict):
+                raise HTTPException(status_code=400, detail="Each field must be an object.")
+            key = str(field.get("key") or "").strip().lower()
+            label = str(field.get("label") or "").strip()
+            field_type = str(field.get("type") or "text").strip().lower()
+            if not re.fullmatch(r"[a-z][a-z0-9_]{0,39}", key) or key in seen:
+                raise HTTPException(status_code=400, detail="Field keys must be unique and use letters, numbers and underscores.")
+            if not label or len(label) > 80 or field_type not in allowed_types:
+                raise HTTPException(status_code=400, detail="Each field needs a label and a supported field type.")
+            if not isinstance(field.get("required", False), bool):
+                raise HTTPException(status_code=400, detail="Field required must be true or false.")
+            prompt = str(field.get("prompt") or "").strip()
+            if len(prompt) > 240:
+                raise HTTPException(status_code=400, detail="Field questions must be 240 characters or fewer.")
+            if field_type == "select":
+                options = field.get("options", [])
+                if not isinstance(options, list) or not options or len(options) > 30 or any(not str(v).strip() for v in options):
+                    raise HTTPException(status_code=400, detail="Dropdown fields need 1 to 30 non-empty options.")
+            seen.add(key)
+
+    validate_fields(global_fields, "Global fields")
+    if len(categories) > 50:
+        raise HTTPException(status_code=400, detail="You can configure up to 50 ticket categories.")
+    category_keys = set()
+    for category in categories:
+        if not isinstance(category, dict):
+            raise HTTPException(status_code=400, detail="Each category must be an object.")
+        key = str(category.get("key") or "").strip().lower()
+        label = str(category.get("label") or "").strip()
+        if not re.fullmatch(r"[a-z][a-z0-9_]{0,39}", key) or key in category_keys or not label or len(label) > 80:
+            raise HTTPException(status_code=400, detail="Category keys must be unique and categories need a valid name.")
+        category_keys.add(key)
+        validate_fields(category.get("fields", []), f"Fields for {label}")
+    return {"global_fields": global_fields, "categories": categories}
+
+
+@router.get("/current/ticket-intake")
+def get_ticket_intake_configuration(
+    db: Session = Depends(get_db),
+    authorization: str = Header(default=None),
+    x_company_id: int = Header(default=None, alias="X-Company-ID"),
+):
+    company = get_workspace_company(authorization, x_company_id, db)
+    if not company:
+        raise HTTPException(status_code=404, detail="Company not found.")
+    row = db.query(TicketIntakeConfiguration).filter(
+        TicketIntakeConfiguration.company_id == company["id"]
+    ).first()
+    if row:
+        return row.configuration or {"global_fields": [], "categories": []}
+    # Preserve the existing email-first workflow until an admin saves a policy.
+    return {
+        "global_fields": [{
+            "key": "email", "label": "Email address", "type": "email",
+            "required": True,
+            "prompt": "What email address should our support team use to send you updates?"
+        }],
+        "categories": [],
+        "legacy_default": True,
+    }
+
+
+@router.put("/current/ticket-intake")
+def save_ticket_intake_configuration(
+    data: dict,
+    db: Session = Depends(get_db),
+    authorization: str = Header(default=None),
+    x_company_id: int = Header(default=None, alias="X-Company-ID"),
+):
+    company = get_workspace_company(authorization, x_company_id, db)
+    if not company:
+        raise HTTPException(status_code=404, detail="Company not found.")
+    configuration = _validate_ticket_intake_configuration(data)
+    row = db.query(TicketIntakeConfiguration).filter(
+        TicketIntakeConfiguration.company_id == company["id"]
+    ).first()
+    if not row:
+        row = TicketIntakeConfiguration(company_id=company["id"])
+        db.add(row)
+    row.configuration = configuration
+    db.commit()
+    return {
+        "message": "Ticket information settings saved successfully.",
+        "configuration": configuration,
     }
 
 
