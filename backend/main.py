@@ -1231,6 +1231,7 @@ def _start_ticket_collection(
         state["pending_ticket"], state.get("company_id")
     )
     if first_global_field:
+        state["pending_ticket"]["intake_stage"] = "initial_contact"
         return _ask_for_ticket_field(
             state, history, user_message, state["pending_ticket"], first_global_field
         )
@@ -2155,6 +2156,25 @@ def chat(data: dict):
         else:
             pending_ticket.setdefault("custom_fields", {})[field_key] = value
         pending_ticket.pop("current_intake_field", None)
+        if pending_ticket.get("intake_stage") == "initial_contact":
+            next_global_field = _next_missing_global_ticket_field(
+                pending_ticket, state.get("company_id")
+            )
+            if next_global_field:
+                return _ask_for_ticket_field(
+                    state, history, user_message, pending_ticket, next_global_field
+                )
+            pending_ticket.pop("intake_stage", None)
+            pending_ticket["step"] = "additional_details"
+            next_question = _first_investigation_question(
+                pending_ticket.get("original_complaint")
+            )
+            return _save_and_return(
+                state, history, user_message, next_question,
+                ticket_created=False,
+                conversation_status="collecting_additional_details",
+                response_source="ticket_information_collection",
+            )
         pending_ticket["step"] = "additional_details"
         return _finish_ticket_creation(state, history, user_message, session_id, pending_ticket)
 
