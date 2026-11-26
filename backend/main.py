@@ -1527,6 +1527,23 @@ def chat(data: dict):
         else session_id
     )
 
+    # Reset inactivity as soon as a customer message reaches the backend,
+    # before semantic/LLM processing begins.
+    activity_db = SessionLocal()
+    try:
+        activity_row = activity_db.query(PendingTicketConversation).filter(
+            PendingTicketConversation.company_id == company_id,
+            PendingTicketConversation.chatbot_id == chatbot_id,
+            PendingTicketConversation.session_id == session_id,
+            PendingTicketConversation.status.in_(["active", "awaiting_confirmation"]),
+        ).first()
+        if activity_row:
+            activity_row.last_activity = datetime.now(timezone.utc)
+            activity_row.status = "active"
+            activity_db.commit()
+    finally:
+        activity_db.close()
+
     state = conversation_states.setdefault(state_key, {})
     # Restore the in-progress ticket workflow from PostgreSQL. This also
     # restores its transcript when the customer reloads the widget.
