@@ -522,6 +522,18 @@ async def ticket_conversation_timeout_checker():
                 if (now - last_activity).total_seconds() < timeout_minutes * 60:
                     continue
 
+                # A previous process may have created the ticket but stopped
+                # before deleting this pending row. Avoid duplicate submission.
+                existing_ticket = db.query(Ticket).filter(
+                    Ticket.session_id == row.session_id,
+                    Ticket.company_id == row.company_id,
+                    Ticket.chatbot_id == row.chatbot_id,
+                ).first()
+                if existing_ticket:
+                    db.delete(row)
+                    db.commit()
+                    continue
+
                 state = row.state_data if isinstance(row.state_data, dict) else {}
                 pending = state.get("pending_ticket") or {}
                 email = pending.get("customer_email") or state.get("customer_email")
@@ -887,10 +899,16 @@ def _save_and_return(state, history, user_message, reply, **payload):
     ticket_buffer = state.get("ticket_conversation_buffer", [])
 
     if state.get("pending_ticket"):
-        ticket_buffer.append({
-            "user_message": user_message,
-            "bot_reply": reply,
-        })
+        if state.pop("_timeout_submission", False):
+            ticket_buffer.append({
+                "user_message": "",
+                "bot_reply": reply,
+            })
+        else:
+            ticket_buffer.append({
+                "user_message": user_message,
+                "bot_reply": reply,
+            })
         state["ticket_conversation_buffer"] = ticket_buffer
 
     elif payload.get("ticket_created") is True:
