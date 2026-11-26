@@ -3537,18 +3537,47 @@ def chat(data: dict):
         intervention_confidence = intervention_result["confidence"]
 
     else:
-        # Unknown categories must not be treated as complaints by default.
-        reply = (
-            "Could you tell me a little more about what you need help with?"
-        )
+        # A low-confidence/unknown classification is NOT a reason to fall
+        # back to a generic scripted clarification. Let the conversational
+        # model respond to the customer's actual message and recent context.
+        # This path must never start, modify, or claim to create a ticket.
+        try:
+            reply = generate_llm_response(
+                customer_message=user_message,
+                intent="general_enquiry",
+                context=(
+                    "The conversation classifier could not confidently assign "
+                    "a support action to this message. Continue the conversation "
+                    "naturally. First answer the customer's actual question or "
+                    "acknowledge what they said. Use the recent conversation to "
+                    "understand short replies and references. If the meaning is "
+                    "genuinely unclear, ask one specific, conversational "
+                    "clarification question. Do not assume this is a complaint, "
+                    "do not request an email address, do not start a ticket, and "
+                    "do not mention classification or uncertainty."
+                ),
+                conversation_history=history,
+                company_id=state.get("company_id"),
+            )
+            reply = (reply or "").strip()
+            if not reply:
+                raise ValueError("Gemini returned an empty conversational response.")
+        except Exception as exc:
+            print(f"Uncertain-turn conversational response failed: {exc}")
+            reply = (
+                "I may have misunderstood that. Could you rephrase what "
+                "you'd like help with?"
+            )
+
         return _save_and_return(
             state,
             history,
             user_message,
             reply,
             ticket_created=False,
-            needs_clarification=True,
-            conversation_status="awaiting_clarification",
+            needs_clarification=False,
+            conversation_status="conversation_active",
+            response_source="gemini_uncertain_turn_fallback",
         )
 
     # ------------------------------------------------
