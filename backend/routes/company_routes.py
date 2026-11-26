@@ -408,8 +408,9 @@ def _validate_ticket_intake_configuration(data):
                 if not isinstance(options, list) or not options or len(options) > 30 or any(not str(v).strip() for v in options):
                     raise HTTPException(status_code=400, detail="Dropdown fields need 1 to 30 non-empty options.")
             seen.add(key)
+        return seen
 
-    validate_fields(global_fields, "Global fields")
+    global_keys = validate_fields(global_fields, "Global fields")
     if len(categories) > 50:
         raise HTTPException(status_code=400, detail="You can configure up to 50 ticket categories.")
     category_keys = set()
@@ -421,7 +422,9 @@ def _validate_ticket_intake_configuration(data):
         if not re.fullmatch(r"[a-z][a-z0-9_]{0,39}", key) or key in category_keys or not label or len(label) > 80:
             raise HTTPException(status_code=400, detail="Category keys must be unique and categories need a valid name.")
         category_keys.add(key)
-        validate_fields(category.get("fields", []), f"Fields for {label}")
+        category_field_keys = validate_fields(category.get("fields", []), f"Fields for {label}")
+        if global_keys.intersection(category_field_keys):
+            raise HTTPException(status_code=400, detail=f"Field keys in {label} must not duplicate global field keys.")
     return {"global_fields": global_fields, "categories": categories}
 
 
