@@ -2115,15 +2115,18 @@ def chat(data: dict):
                     state, history, user_message, session_id, pending_ticket
                 )
 
-            remaining = 3 - escalation_count
-            reply = (
-                f"I understand you want a human support agent. "
-                f"I've noted your request ({escalation_count}/3). "
-                f"Please tell me the issue details, or ask again if you'd "
-                f"like me to create the handoff ticket now. "
-                f"{remaining} more request"
-                f"{'s' if remaining != 1 else ''} will trigger the handoff."
-            )
+            # Keep the internal escalation threshold invisible to the customer.
+            # Guide the conversation naturally toward the information the agent needs.
+            if escalation_count == 1:
+                reply = (
+                    "Of course. Could you briefly tell me what's happening? "
+                    "That will help our support team understand how to assist you."
+                )
+            else:
+                reply = (
+                    "Certainly. I can help with that. What problem are you "
+                    "experiencing, and when did it start?"
+                )
             return _save_and_return(
                 state, history, user_message, reply,
                 ticket_created=False,
