@@ -1,0 +1,176 @@
+﻿import os
+import hmac
+import hashlib
+from datetime import datetime, timedelta, timezone
+
+import jwt
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from pydantic import BaseModel
+from sqlalchemy.orm import Session
+from sqlalchemy import func
+
+from database.database import get_db
+from database.models import Company, Chatbot, Ticket, Conversation, ConversationMessage
+
+router = APIRouter(prefix="/api/internal", tags=["Internal Admin"])
+
+
+def _ticket_session_ids(db):
+    """Session IDs belonging to successfully created support tickets."""
+    return db.query(Ticket.session_id).filter(Ticket.session_id.isnot(None))
+
+
+class AdminLogin(BaseModel):
+    email: str
+    password: str
+
+
+def verify_password(password, stored_hash):
+    try:
+        salt, expected = stored_hash.split(":", 1)
+        actual = hashlib.pbkdf2_hmac(
+            "sha256", password.encode(), bytes.fromhex(salt), 310000
+        ).hex()
+        return hmac.compare_digest(actual, expected)
+    except Exception:
+        return False
+
+
+def require_internal_admin(
+    request: Request,
+    authorization: str = Header(default="")
+):
+    client_host = request.client.host if request.client else ""
+    local_dev = (
+        os.getenv("INTERNAL_ADMIN_DEV_MODE", "").lower() == "true"
+        and client_host in ("127.0.0.1", "::1", "localhost")
+    )
+    if local_dev:
+        return {"sub": "local-development", "type": "internal_admin"}
+
+    if not authorization.lower().startswith("bearer "):
+        raise HTTPException(status_code=401, detail="Internal admin login required.")
+
+    secret = os.getenv("INTERNAL_ADMIN_JWT_SECRET")
+    if not secret:
+        raise HTTPException(status_code=503, detail="Internal admin authentication is not configured.")
+
+    try:
+        payload = jwt.decode(authorization.split(" ", 1)[1], secret, algorithms=["HS256"])
+        if payload.get("type") != "internal_admin":
+            raise ValueError("Wrong token type")
+        return payload
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid or expired internal admin session.")
+
+
+def iso(value):
+    return value.isoformat() if value else None
+
+
+@router.post("/auth/login")
+def internal_login(data: AdminLogin):
+    admin_email = os.getenv("INTERNAL_ADMIN_EMAIL", "").strip().lower()
+    password_hash = os.getenv("INTERNAL_ADMIN_PASSWORD_HASH", "")
+    secret = os.getenv("INTERNAL_ADMIN_JWT_SECRET", "")
+    if not admin_email or not password_hash or not secret:
+        raise HTTPException(status_code=503, detail="Internal admin credentials are not configured.")
+    if data.email.strip().lower() != admin_email or not verify_password(data.password, password_hash):
+        raise HTTPException(status_code=401, detail="Incorrect email or password.")
+    token = jwt.encode(
+        {"sub": admin_email, "type": "internal_admin",
+         "exp": datetime.now(timezone.utc) + timedelta(hours=8)},
+        secret, algorithm="HS256"
+    )
+    return {"access_token": token, "token_type": "bearer"}
+
+
+@router.get("/health")
+def internal_health(admin=Depends(require_internal_admin), db: Session = Depends(get_db)):
+    return {
+        "status": "connected",
+        "database": "connected",
+        "companies": db.query(Company).count(),
+        "chatbots": db.query(Chatbot).count(),
+        "tickets": db.query(Ticket).count(),
+        "conversations": db.query(Conversation).filter(Conversation.session_id.in_(_ticket_session_ids(db))).count(),
+    }
+
+
+@router.get("/overview")
+def internal_overview(admin=Depends(require_internal_admin), db: Session = Depends(get_db)):
+    return {
+        "total_companies": db.query(Company).count(),
+        "active_companies": db.query(Company).filter(Company.is_active.is_(True)).count(),
+        "total_chatbots": db.query(Chatbot).count(),
+        "total_tickets": db.query(Ticket).count(),
+        "open_tickets": db.query(Ticket).filter(func.lower(Ticket.status) == "open").count(),
+        "total_conversations": db.query(Conversation).filter(Conversation.session_id.in_(_ticket_session_ids(db))).count(),
+    }
+
+
+@router.get("/companies")
+def internal_companies(admin=Depends(require_internal_admin), db: Session = Depends(get_db)):
+    rows = db.query(Company).order_by(Company.created_at.desc()).limit(500).all()
+    result = []
+    for row in rows:
+        result.append({
+            "id": row.id, "name": row.name, "email": row.email,
+            "slug": row.slug, "is_active": row.is_active,
+            "created_at": iso(row.created_at),
+            "bots": db.query(Chatbot).filter(Chatbot.organization_id == row.id).count(),
+            "conversations": db.query(Conversation).filter(Conversation.company_id == row.id, Conversation.session_id.in_(_ticket_session_ids(db))).count(),
+            "tickets": db.query(Ticket).filter(Ticket.company_id == row.id).count(),
+        })
+    return result
+
+
+@router.get("/chatbots")
+def internal_chatbots(admin=Depends(require_internal_admin), db: Session = Depends(get_db)):
+    rows = db.query(Chatbot, Company.name).outerjoin(
+        Company, Company.id == Chatbot.organization_id
+    ).order_by(Chatbot.created_at.desc()).limit(500).all()
+    return [{
+        "id": row.id, "public_id": str(row.public_id),
+        "bot_name": row.bot_name, "organization_id": row.organization_id,
+        "company": company_name or "Unknown company",
+        "status": row.status, "created_at": iso(row.created_at),
+        "conversations": db.query(Conversation).filter(Conversation.chatbot_id == row.id, Conversation.session_id.in_(_ticket_session_ids(db))).count(),
+    } for row, company_name in rows]
+
+
+@router.get("/tickets")
+def internal_tickets(admin=Depends(require_internal_admin), db: Session = Depends(get_db)):
+    rows = db.query(Ticket, Company.name).outerjoin(
+        Company, Company.id == Ticket.company_id
+    ).order_by(Ticket.created_at.desc()).limit(500).all()
+    return [{
+        "id": row.id, "ticket_id": row.ticket_id,
+        "company_id": row.company_id, "company": company_name or "Unknown company",
+        "customer_email": row.customer_email,
+        "customer_message": row.customer_message,
+        "category": row.category, "priority": row.priority,
+        "status": row.status, "created_at": iso(row.created_at),
+    } for row, company_name in rows]
+
+
+@router.get("/conversations")
+def internal_conversations(admin=Depends(require_internal_admin), db: Session = Depends(get_db)):
+    rows = db.query(Conversation, Company.name, Chatbot.bot_name).outerjoin(
+        Company, Company.id == Conversation.company_id
+    ).outerjoin(Chatbot, Chatbot.id == Conversation.chatbot_id).filter(
+        Conversation.session_id.in_(_ticket_session_ids(db))
+    ).order_by(
+        Conversation.last_activity.desc()
+    ).limit(500).all()
+    return [{
+        "id": row.id, "session_id": row.session_id,
+        "company_id": row.company_id, "company": company_name or "Unknown company",
+        "chatbot_id": row.chatbot_id, "bot": bot_name or "Unknown chatbot",
+        "customer_id": row.customer_id, "customer_email": row.customer_email,
+        "status": row.status, "started_at": iso(row.started_at),
+        "last_activity": iso(row.last_activity),
+        "messages": db.query(ConversationMessage).filter(
+            ConversationMessage.conversation_id == row.id
+        ).count(),
+    } for row, company_name, bot_name in rows]

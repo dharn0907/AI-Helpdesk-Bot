@@ -38,6 +38,7 @@ from services.ticket_conversation_service import (
 from routes.conversation_routes import router as conversation_router
 from routes.historical_solution_routes import router as historical_solution_router
 from routes.historical_attempt_routes import router as historical_attempt_router
+from routes.internal_admin_routes import router as internal_admin_router
 from database.database import SessionLocal
 from database.models import (
     Ticket,
@@ -516,6 +517,8 @@ app.add_middleware(
         "http://localhost:5174",
         "http://127.0.0.1:5173",
         "http://127.0.0.1:5174",
+        "http://localhost:5175",
+        "http://127.0.0.1:5175",
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -778,41 +781,44 @@ def wants_human_support(message):
 
 
 def _save_and_return(state, history, user_message, reply, **payload):
-    """Save the exchange and return a consistent chatbot response."""
+    """Save chat history and persist only successfully created ticket conversations."""
 
     state["history"] = save_history(history, user_message, reply)
 
-    # Save the assistant response to Zep (best-effort)
-    thread_uuid = state.get("zep_thread_uuid")
+    ticket_buffer = state.get("ticket_conversation_buffer", [])
 
-    if thread_uuid:
+    if state.get("pending_ticket"):
+        ticket_buffer.append({
+            "user_message": user_message,
+            "bot_reply": reply,
+        })
+        state["ticket_conversation_buffer"] = ticket_buffer
+
+    elif payload.get("ticket_created") is True:
+        ticket_buffer.append({
+            "user_message": user_message,
+            "bot_reply": reply,
+        })
+
         try:
-            save_assistant_turn(thread_uuid, reply)
+            for exchange in ticket_buffer:
+                save_conversation_exchange(
+                    session_id=state.get("session_id"),
+                    company_id=state.get("company_id"),
+                    chatbot_id=state.get("chatbot_id"),
+                    customer_id=state.get("customer_id"),
+                    customer_email=state.get("customer_email"),
+                    user_message=exchange["user_message"],
+                    bot_reply=exchange["bot_reply"],
+                )
         except Exception as exc:
-            print(f"ZEP: Assistant message save failed: {exc}")
+            print(f"CONVERSATION LOG ERROR: {exc}")
+        finally:
+            state.pop("ticket_conversation_buffer", None)
 
-    return {"reply": reply, **payload}
+    else:
+        state.pop("ticket_conversation_buffer", None)
 
-def _save_and_return(state, history, user_message, reply, **payload):
-    """Save the exchange and return a consistent chatbot response."""
-
-    state["history"] = save_history(history, user_message, reply)
-
-    # Save conversation to database
-    try:
-        save_conversation_exchange(
-            session_id=state.get("session_id"),
-            company_id=state.get("company_id"),
-            chatbot_id=state.get("chatbot_id"),
-            customer_id=state.get("customer_id"),
-            customer_email=state.get("customer_email"),
-            user_message=user_message,
-            bot_reply=reply,
-        )
-    except Exception as exc:
-        print(f"CONVERSATION LOG ERROR: {exc}")
-
-    # Save assistant response to Zep best-effort
     thread_uuid = state.get("zep_thread_uuid")
     if thread_uuid:
         try:
@@ -3252,3 +3258,4 @@ app.include_router(knowledge_base_router)
 app.include_router(conversation_router)
 app.include_router(historical_solution_router)
 app.include_router(historical_attempt_router)
+app.include_router(internal_admin_router)

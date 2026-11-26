@@ -1,0 +1,131 @@
+﻿import React,{useMemo,useState} from 'react'
+import {
+ LayoutDashboard,Building2,Bot,MessagesSquare,Ticket,Users,Headset,ChartNoAxesCombined,
+ BrainCircuit,ScrollText,ShieldCheck,Settings,Search,Bell,ChevronDown,ChevronLeft,ChevronRight,
+ Menu,X,ArrowUpRight,ArrowDownRight,Activity,Clock3,CheckCircle2,AlertTriangle,Server,
+ Zap,Plus,Download,Filter,MoreHorizontal,ExternalLink,Command,LogOut,CalendarDays,
+ MessageSquareText,CircleHelp,PanelLeftClose
+} from 'lucide-react'
+import {AreaChart,Area,BarChart,Bar,XAxis,YAxis,CartesianGrid,Tooltip,ResponsiveContainer,LineChart,Line,PieChart,Pie,Cell} from 'recharts'
+import {navItems,companies,chatbots,conversations,tickets,customers,agents,errors,logs,activity as activityRows,trend} from './data'
+import {isDemo,api,setToken,loadPlatformData} from './api'
+
+const iconMap={LayoutDashboard,Building2,Bot,MessagesSquare,Ticket,Users,Headset,ChartNoAxesCombined,BrainCircuit,ScrollText,ShieldCheck,Settings}
+const money=n=>new Intl.NumberFormat('en-IN').format(n)
+const initialStats=[
+ ['Registered companies','companies','5','Across all workspaces','Building2','blue','+2 this month'],
+ ['Active chatbots','bots','12','Across 5 companies','Bot','violet','+3 this month'],
+ ['Conversations','conversations','36,060','All-time platform volume','MessagesSquare','cyan','+12.8%'],
+ ['Open tickets','open','48','Needs attention','Ticket','orange','-4.2%']
+]
+const statusClass=s=>({Active:'green',Resolved:'green',Online:'green',Deployed:'green',Open:'orange',Pending:'orange',Investigating:'orange', 'In Progress':'blue',Escalated:'red',Unresolved:'red',Inactive:'muted',Suspended:'red',Paused:'muted',Away:'muted',Error:'red',Warning:'orange',Info:'blue',Urgent:'red',High:'red',Medium:'orange',Low:'green',Closed:'muted'}[s]||'muted')
+
+function Badge({children}){return <span className={`badge ${statusClass(children)}`}><i/>{children}</span>}
+function StatCard({label,value,caption,icon:Icon,tone,change}){return <div className="stat-card"><div className="stat-top"><span>{label}</span><span className={`stat-icon ${tone}`}><Icon size={18}/></span></div><div className="stat-value">{value}</div><div className="stat-foot"><span className="positive"><ArrowUpRight size={14}/>{change}</span><span>{caption}</span></div></div>}
+function PageTitle({eyebrow,title,description,action}){return <div className="page-title"><div><div className="eyebrow">{eyebrow}</div><h1>{title}</h1><p>{description}</p></div>{action}</div>}
+function SearchInput({value,onChange,placeholder='Search...'}){return <label className="search-input"><Search size={16}/><input value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder}/><kbd>âŒ˜ K</kbd></label>}
+function Table({columns,rows,search,empty='No matching records found.'}) {
+ const filtered=rows.filter(row=>Object.values(row).join(' ').toLowerCase().includes(search.toLowerCase()))
+ return <div className="table-wrap"><table><thead><tr>{columns.map(c=><th key={c.key}>{c.label}</th>)}</tr></thead><tbody>{filtered.map((row,i)=><tr key={row.id||i}>{columns.map(c=><td key={c.key}>{c.render?c.render(row[c.key],row):row[c.key]}</td>)}</tr>)}</tbody></table>{!filtered.length&&<div className="empty">{empty}</div>}</div>
+}
+function Panel({title,subtitle,children,action}){return <section className="panel"><div className="panel-head"><div><h3>{title}</h3>{subtitle&&<p>{subtitle}</p>}</div>{action}</div>{children}</section>}
+function Overview({setPage,platformData}) {
+  const liveCompanies = platformData?.companies || (isDemo ? companies : [])
+  const liveTickets = platformData?.tickets || (isDemo ? tickets : [])
+  const overview = platformData?.overview || {}
+  const countValues = [overview.total_companies, overview.total_chatbots, overview.total_conversations, overview.open_tickets]
+  const liveStats = initialStats.map(([label,key,value,caption,ic,tone,change],i)=>[
+    label,key,platformData ? (countValues[i] ?? 0) : (isDemo ? value : '?'),
+    caption,ic,tone,platformData ? 'Live database' : (isDemo ? change : 'Loading')
+  ])
+ const demoPie=[{name:'Resolved',value:62,color:'#16a879'},{name:'Open',value:18,color:'#f59e0b'},{name:'Pending',value:12,color:'#6c7cf0'},{name:'Closed',value:8,color:'#cbd5e1'}]
+  const statusNames=['Resolved','Open','Pending','Closed']
+  const statusColors=['#16a879','#f59e0b','#6c7cf0','#cbd5e1']
+  const pie=platformData ? statusNames.map((name,i)=>({
+    name,
+    value:liveTickets.length ? Math.round(liveTickets.filter(t=>String(t.status).toLowerCase()===name.toLowerCase()).length/liveTickets.length*100) : 0,
+    color:statusColors[i]
+  })) : (isDemo ? demoPie : [])
+ return <>
+ <PageTitle eyebrow="PLATFORM OVERVIEW" title="Good morning, Admin" description="Here's what's happening across your AI Helpdesk platform." action={<button className="btn secondary"><CalendarDays size={16}/> Last 7 days <ChevronDown size={15}/></button>}/>
+ {isDemo&&<div className="demo-banner"><span className="demo-dot"/> DEMO ENVIRONMENT <span>Illustrative sample records only Â· not connected to production data</span></div>}
+ <div className="stats-grid">
+ {liveStats.map(([label,key,value,caption,ic,tone,change])=><StatCard key={key} label={label} value={value} caption={caption} icon={iconMap[ic]} tone={tone} change={change}/>)}
+ </div>
+ <div className="chart-grid">
+ <Panel title="Platform activity" subtitle="Conversation volume and ticket creation Â· last 7 days" action={<button className="icon-btn"><MoreHorizontal size={18}/></button>}>
+ <div className="chart-legend"><span><i className="legend-blue"/> Conversations</span><span><i className="legend-orange"/> Tickets</span></div>
+ <div className="chart-area"><ResponsiveContainer width="100%" height="100%"><AreaChart data={isDemo ? trend : []} margin={{top:12,right:8,left:-18,bottom:0}}><defs><linearGradient id="convFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#6475e8" stopOpacity={.2}/><stop offset="100%" stopColor="#6475e8" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#edf0f5"/><XAxis dataKey="day" axisLine={false} tickLine={false} tick={{fill:'#98a2b3',fontSize:12}}/><YAxis axisLine={false} tickLine={false} tick={{fill:'#98a2b3',fontSize:11}}/><Tooltip contentStyle={{border:'1px solid #edf0f5',borderRadius:12,boxShadow:'0 8px 24px #1c2b4a12'}}/><Area type="monotone" dataKey="conversations" stroke="#6475e8" strokeWidth={2.5} fill="url(#convFill)"/><Area type="monotone" dataKey="tickets" stroke="#f0a34a" strokeWidth={2} fill="none"/></AreaChart></ResponsiveContainer></div>
+ </Panel>
+ <Panel title="Ticket distribution" subtitle="Current ticket status breakdown">
+ <div className="donut-wrap"><div className="donut"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={pie} dataKey="value" innerRadius={54} outerRadius={76} paddingAngle={4} stroke="none">{pie.map((p,i)=><Cell key={i} fill={p.color}/>)}</Pie></PieChart></ResponsiveContainer><div className="donut-center"><strong>{platformData ? (overview.total_tickets ?? liveTickets.length) : (isDemo ? 326 : 0)}</strong><span>Total tickets</span></div></div><div className="pie-legend">{pie.map(p=><div key={p.name}><span><i style={{background:p.color}}/>{p.name}</span><b>{p.value}%</b></div>)}</div></div>
+ </Panel></div>
+ <div className="lower-grid">
+ <Panel title="Company activity" subtitle="Most active workspaces this week" action={<button className="text-btn" onClick={()=>setPage('Companies')}>View all <ArrowUpRight size={14}/></button>}>
+ <div className="company-rank">{liveCompanies.slice(0,4).map((c,i)=><div className="rank-row" key={c.id}><div className={`company-avatar av-${i}`}>{c.name.split(' ').map(x=>x[0]).join('').slice(0,2)}</div><div className="rank-name"><b>{c.name}</b><span>{c.bots} chatbots</span></div><div className="rank-bar"><i style={{width:`${Math.min(100,Math.max(5,(c.conversations||0)/Math.max(1,...liveCompanies.map(x=>x.conversations||0))*100))}%`}}/></div><strong>{money(c.conversations||0)}</strong></div>)}</div>
+ </Panel>
+ <Panel title="Recent platform activity" subtitle="Latest events across your platform" action={<button className="text-btn" onClick={()=>setPage('System Logs')}>All activity <ArrowUpRight size={14}/></button>}>
+ <div className="activity-list">{platformData ? liveTickets.slice(0,5).map((t,i)=><div className="activity-row" key={t.id}><div className={`activity-icon ai-${i}`}><Activity size={15}/></div><div><b>{t.company}</b><p>{t.subject}</p><span>{t.created}</span></div></div>) : isDemo ? activityRows.map((a,i)=><div className="activity-row" key={i}><div className={`activity-icon ai-${i}`}><Activity size={15}/></div><div><b>{a[0]}</b><p>{a[1]}</p><span>{a[2]}</span></div></div>) : <p>Live activity will appear when data loads.</p>}</div>
+ </Panel>
+ </div>
+ </>
+}
+function ModulePage({page,platformData}) {
+ const [q,setQ]=useState('')
+ const [filter,setFilter]=useState('All')
+ const configs={
+ 'Companies':{desc:'Manage and monitor every company registered on your platform.',rows:platformData?.companies || (isDemo ? companies : []),cols:[['name','Company'],['id','Company ID'],['joined','Registered'],['status','Status',v=><Badge>{v}</Badge>],['bots','Chatbots'],['conversations','Conversations'],['tickets','Tickets'],['last','Last active']],filters:['All','Active','Inactive','Suspended']},
+ 'Chatbots':{desc:'Monitor chatbot deployments, usage, and availability across companies.',rows:platformData?.chatbots || (isDemo ? chatbots : []),cols:[['name','Chatbot'],['id','Chatbot ID'],['company','Company'],['deployment','Deployment',v=><Badge>{v}</Badge>],['status','Status',v=><Badge>{v}</Badge>],['conversations','Conversations'],['today','Today'],['last','Last active']],filters:['All','Active','Inactive','Deployed','Paused']},
+ 'Conversations':{desc:'Investigate customer conversations across all company chatbots. Read-only monitoring.',rows:platformData?.conversations || (isDemo ? conversations : []),cols:[['id','Conversation ID'],['company','Company'],['bot','Chatbot'],['customer','Customer ID'],['started','Started'],['last','Last message'],['status','Status',v=><Badge>{v}</Badge>],['messages','Messages']],filters:['All','Active','Resolved','Escalated','Unresolved']},
+ 'Tickets':{desc:'Platform-wide visibility into customer support tickets and their progress.',rows:platformData?.tickets || (isDemo ? tickets : []),cols:[['id','Ticket ID'],['company','Company'],['customer','Customer'],['subject','Issue'],['category','Category'],['priority','Priority',v=><Badge>{v}</Badge>],['agent','Assigned agent'],['status','Status',v=><Badge>{v}</Badge>],['created','Created']],filters:['All','Open','Pending','In Progress','Resolved']},
+ 'Customers':{desc:'Customer records scoped to their associated company. Similar identifiers are not merged across tenants.',rows:[],cols:[['name','Customer'],['id','Customer ID'],['email','Email'],['company','Company'],['conversations','Conversations'],['tickets','Tickets'],['last','Last interaction']],filters:['All']},
+ 'Support Agents':{desc:'Monitor support-team workload and ticket resolution activity.',rows:[],cols:[['name','Agent'],['id','Agent ID'],['company','Company'],['email','Email'],['status','Status',v=><Badge>{v}</Badge>],['assigned','Assigned'],['resolved','Resolved'],['pending','Pending'],['last','Last active']],filters:['All','Online','Away']},
+ 'AI Monitoring':{desc:'Investigate AI runtime, retrieval, and response-generation failures.',rows:[],cols:[['id','Event ID'],['type','Error type'],['company','Company'],['bot','Chatbot'],['severity','Severity',v=><Badge>{v}</Badge>],['time','Timestamp'],['detail','Description'],['status','Status',v=><Badge>{v}</Badge>]],filters:['All','High','Medium','Low']},
+ 'System Logs':{desc:'Recent service events and platform logs. Live health requires backend health endpoints.',rows:[],cols:[['id','Log ID'],['service','Service'],['level','Level',v=><Badge>{v}</Badge>],['message','Message'],['time','Timestamp']],filters:['All','Info','Warning','Error']},
+ 'Admin Users & Roles':{desc:'Internal administrator directory and role governance. Management actions require protected admin APIs.',rows:[],cols:[['name','Admin'],['id','Admin ID'],['email','Email'],['role','Role'],['status','Status',v=><Badge>{v}</Badge>],['last','Last active']],filters:['All','Super Admin','Platform Administrator','Monitoring / Support']},
+ 'Analytics & Reports':{desc:'Explore usage trends, company activity, and support performance.',rows:platformData?.companies || (isDemo ? companies : []),cols:[['name','Company'],['bots','Chatbots'],['conversations','Conversations'],['tickets','Tickets'],['last','Last active']],filters:['All']},
+ 'Settings':{desc:'Platform-wide preferences and integrations. Values below are configuration placeholders.',rows:[{name:'API base URL',value:'Not configured',state:'Pending'},{name:'Internal admin auth',value:'Backend endpoint required',state:'Pending'},{name:'Audit logging',value:'Backend implementation required',state:'Pending'},{name:'Health monitoring',value:'Health endpoint required',state:'Pending'}],cols:[['name','Setting'],['value','Current value'],['state','Integration',v=><Badge>{v}</Badge>]],filters:['All']}
+ }
+ const c=configs[page]
+ const filteredRows=useMemo(()=>c.rows.filter(r=>(filter==='All'||Object.values(r).includes(filter))),[c,filter])
+ const cols=c.cols.map(([key,label,render])=>({key,label,render:render?render:undefined}))
+ return <><PageTitle eyebrow="PLATFORM MANAGEMENT" title={page} description={c.desc} action={<button className="btn secondary" onClick={()=>setQ('')}><Download size={16}/> Export CSV</button>}/>
+ {isDemo&&<div className="demo-banner"><span className="demo-dot"/> DEMO DATA <span>These sample records are illustrative and are not live platform data.</span></div>}
+ <Panel title={`${page} directory`} subtitle={`${filteredRows.length} records shown`}>
+ <div className="table-toolbar"><SearchInput value={q} onChange={setQ} placeholder={`Search ${page.toLowerCase()}...`}/><div className="toolbar-right"><label className="filter-select"><Filter size={15}/><select value={filter} onChange={e=>setFilter(e.target.value)}>{c.filters.map(f=><option key={f}>{f}</option>)}</select></label><button className="icon-btn"><MoreHorizontal size={18}/></button></div></div>
+ <Table columns={cols} rows={filteredRows} search={q}/>
+ <div className="table-footer"><span>Showing {filteredRows.length} of {c.rows.length} records</span><div><button className="page-btn" disabled><ChevronLeft size={15}/></button><button className="page-btn current">1</button><button className="page-btn" disabled><ChevronRight size={15}/></button></div></div>
+ </Panel>
+ {page==='Analytics & Reports'&&<div className="chart-grid analytics-chart"><Panel title="Conversation and ticket trends" subtitle="Weekly volume"><div className="chart-area"><ResponsiveContainer width="100%" height="100%"><BarChart data={isDemo ? trend : []}><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#edf0f5"/><XAxis dataKey="day" axisLine={false} tickLine={false}/><YAxis axisLine={false} tickLine={false}/><Tooltip/><Bar dataKey="conversations" fill="#6676e8" radius={[5,5,0,0]}/><Bar dataKey="tickets" fill="#f2ad60" radius={[5,5,0,0]}/></BarChart></ResponsiveContainer></div></Panel><Panel title="Report exports" subtitle="Downloadable report templates"><div className="report-list">{['Company usage report','Chatbot performance report','Ticket resolution report','Agent productivity report'].map(x=><div key={x}><span><ChartNoAxesCombined size={16}/>{x}</span><button className="text-btn" onClick={()=>alert('CSV export becomes available after connecting the reporting API.')}>Export CSV <Download size={14}/></button></div>)}</div></Panel></div>}
+ {page==='Settings'&&<div className="notice-card"><AlertTriangle size={18}/><div><b>Production integration is not configured</b><p>Do not add database credentials to this frontend. Internal authentication, RBAC, audit logging, and health checks must be implemented in the FastAPI backend.</p></div></div>}
+ </>}
+export default function App(){
+ const [page,setPage]=useState('Overview')
+ const [sidebarOpen,setSidebarOpen]=useState(false)
+ const [globalSearch,setGlobalSearch]=useState('')
+ const [profileOpen,setProfileOpen]=useState(false)
+ const [apiState,setApiState]=useState('Not connected')
+  const [platformData,setPlatformData]=useState(null)
+ const [time,setTime]=useState(new Date())
+ React.useEffect(()=>{const t=setInterval(()=>setTime(new Date()),60000);return()=>clearInterval(t)},[])
+ React.useEffect(()=>{
+    if(isDemo) return
+    loadPlatformData()
+      .then(data=>{setPlatformData(data);setApiState('Connected')})
+      .catch(error=>{console.error('Internal dashboard API:',error);setApiState('Unavailable')})
+  },[])
+ const ActiveIcon=iconMap[navItems.find(x=>x[0]===page)?.[1]]||LayoutDashboard
+ return <div className="app-shell">
+ <aside className={`sidebar ${sidebarOpen?'open':''}`}>
+ <div className="brand"><div className="brand-mark"><Command size={19}/></div><div><b>orbit<span>.</span></b><small>INTERNAL PLATFORM</small></div><button className="mobile-close" onClick={()=>setSidebarOpen(false)}><X size={18}/></button></div>
+ <div className="workspace-label">WORKSPACE</div><nav>{navItems.map(([name,ic])=>{const Icon=iconMap[ic];return <button key={name} className={`nav-item ${page===name?'active':''}`} onClick={()=>{setPage(name);setSidebarOpen(false)}}><Icon size={17}/><span>{name}</span>{name==='AI Monitoring'&&<i className="nav-alert"/>}</button>})}</nav>
+ <div className="sidebar-bottom"><div className="help-card"><div className="help-icon"><CircleHelp size={17}/></div><b>Need a hand?</b><p>Visit the internal docs for platform guidance.</p><button onClick={()=>alert('Add your internal documentation URL here.')}>Open documentation <ArrowUpRight size={13}/></button></div><div className="sidebar-user"><div className="user-avatar">SA</div><div><b>Super Admin</b><small>Platform operations</small></div><MoreHorizontal size={18}/></div></div>
+ </aside>
+ {sidebarOpen&&<div className="scrim" onClick={()=>setSidebarOpen(false)}/>}
+ <main className="main-area">
+ <header className="topbar"><div className="top-left"><button className="mobile-menu" onClick={()=>setSidebarOpen(true)}><Menu size={20}/></button><div className="breadcrumb">Workspace <span>/</span> <b>{page}</b></div></div><div className="top-actions"><SearchInput value={globalSearch} onChange={setGlobalSearch} placeholder="Search anything..."/><div className={`connection-pill ${apiState==='Connected'?'connected':''}`}><i/>{isDemo?'Demo mode':apiState}</div><button className="icon-btn notification" title="Notifications"><Bell size={18}/><i/></button><div className="profile-wrap"><button className="profile-button" onClick={()=>setProfileOpen(!profileOpen)}><div className="user-avatar small">SA</div><span><b>Super Admin</b><small>Platform Owner</small></span><ChevronDown size={14}/></button>{profileOpen&&<div className="profile-menu"><button onClick={()=>setProfileOpen(false)}><ShieldCheck size={15}/> Admin profile</button><button onClick={()=>{setToken(null);setProfileOpen(false);alert('No production login session is active in this UI preview.')}}><LogOut size={15}/> Sign out</button></div>}</div></div></header>
+ <div className="content"><div className="content-topline"><span><ActiveIcon size={15}/>{page}</span><span><Clock3 size={14}/>{time.toLocaleString('en-IN',{weekday:'short',day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</span></div>{page==='Overview'?<Overview setPage={setPage} platformData={platformData}/>:<ModulePage key={page} page={page} platformData={platformData}/>}</div>
+ <footer>Â© 2026 Orbit Internal Platform <span>Internal use only Â· {isDemo?'Demo preview':'API integration'}</span></footer>
+ </main>
+ </div>
+}
