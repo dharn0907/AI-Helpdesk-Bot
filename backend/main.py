@@ -2034,6 +2034,63 @@ def chat(data: dict):
                 else:
                     action = "UNCERTAIN"
 
+            # Focused recovery for a duplicate-charge complaint. This runs
+            # regardless of Gemini confidence so short, clear answers such
+            # as "charged two times" never fall through to generic chat.
+            normalized_payment_text = re.sub(
+                r"\\s+", " ", user_message.lower()
+            ).strip()
+            duplicate_charge = (
+                any(term in normalized_payment_text for term in (
+                    "charged twice", "charged two times", "charged 2 times",
+                    "charged double", "charged more than once",
+                    "debited twice", "debited two times", "debited 2 times",
+                    "deducted twice", "deducted two times",
+                    "deducted 2 times", "money taken twice",
+                    "charged me twice", "billed twice",
+                ))
+                or (
+                    any(term in normalized_payment_text for term in (
+                        "two times", "2 times", "twice", "double",
+                    ))
+                    and any(term in normalized_payment_text for term in (
+                        "charged", "charge", "debited", "deducted",
+                        "payment", "billed",
+                    ))
+                )
+            )
+            if (
+                pending_ticket.get("original_complaint")
+                and duplicate_charge
+            ):
+                action = "ADD_DETAIL"
+                interpretation["action"] = "ADD_DETAIL"
+                interpretation["confidence"] = max(
+                    float(interpretation.get("confidence") or 0.0), 0.85
+                )
+                interpretation["relevant_details"] = user_message.strip()
+                interpretation["needs_clarification"] = False
+                interpretation["clarification_question"] = ""
+                interpretation["information_complete"] = False
+                interpretation["missing_information"] = [
+                    "whether both charges were actually deducted",
+                    "whether one order or two orders were created",
+                    "transaction date or reference, if available",
+                ]
+                interpretation["next_question"] = (
+                    "Were both amounts actually deducted from your bank "
+                    "or payment account, and did you receive one order "
+                    "confirmation or two?"
+                )
+                interpretation["issue_summary"] = (
+                    (interpretation.get("issue_summary") or "").strip()
+                    or pending_ticket.get("issue_summary")
+                    or pending_ticket.get("original_complaint", "")
+                )
+                print(
+                    "DUPLICATE PAYMENT INVESTIGATION: targeted follow-up selected"
+                )
+
 
             if action == "ADD_DETAIL":
                 relevant_detail = (
