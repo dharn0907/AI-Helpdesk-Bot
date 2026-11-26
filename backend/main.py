@@ -2,6 +2,7 @@
 
 import re
 import time
+import json
 
 from urllib import response
 import uuid
@@ -48,6 +49,8 @@ from database.models import (
     ConversationMessage,
     HistoricalSolutionFeedback,
     HistoricalSolutionAttempt,
+    PendingTicketConversation,
+    TicketConversationSettings,
 )
 
 def _get_active_company_config(company_id=None):
@@ -493,6 +496,74 @@ async def historical_solution_timeout_checker():
         await asyncio.sleep(60)
 
 
+async def ticket_conversation_timeout_checker():
+    """Submit incomplete ticket workflows after company-configured inactivity."""
+    print("Ticket conversation inactivity checker started.")
+    while True:
+        db = SessionLocal()
+        try:
+            active_rows = db.query(PendingTicketConversation).filter(
+                PendingTicketConversation.status == "active"
+            ).all()
+            now = datetime.now(timezone.utc)
+            for row in active_rows:
+                settings = db.query(TicketConversationSettings).filter(
+                    TicketConversationSettings.company_id == row.company_id
+                ).first()
+                enabled = settings.enabled if settings else True
+                timeout_minutes = settings.timeout_minutes if settings else 2
+                if not enabled:
+                    continue
+                last_activity = row.last_activity
+                if last_activity is None:
+                    continue
+                if last_activity.tzinfo is None:
+                    last_activity = last_activity.replace(tzinfo=timezone.utc)
+                if (now - last_activity).total_seconds() < timeout_minutes * 60:
+                    continue
+
+                state = row.state_data if isinstance(row.state_data, dict) else {}
+                pending = state.get("pending_ticket") or {}
+                email = pending.get("customer_email") or state.get("customer_email")
+                if not pending or not email or not valid_email(email):
+                    # Preserve the conversation. The customer must provide a
+                    # contact email before a support ticket can be submitted.
+                    row.status = "awaiting_confirmation"
+                    db.commit()
+                    continue
+
+                state["session_id"] = row.session_id
+                state["company_id"] = row.company_id
+                state["chatbot_id"] = row.chatbot_id
+                state["_timeout_submission"] = True
+                history = state.setdefault("history", [])
+                try:
+                    result = _finish_ticket_creation(
+                        state,
+                        history,
+                        "The customer did not respond before the ticket conversation timed out.",
+                        row.session_id,
+                        pending,
+                    )
+                    print(
+                        "TICKET CONVERSATION TIMEOUT:",
+                        row.session_id,
+                        result.get("ticket_id"),
+                        result.get("conversation_status"),
+                    )
+                except Exception as exc:
+                    print(f"TICKET CONVERSATION TIMEOUT SUBMISSION ERROR: {exc}")
+                    row.status = "active"
+                    row.last_activity = now
+                    db.commit()
+        except Exception as exc:
+            db.rollback()
+            print(f"Ticket conversation timeout checker error: {exc}")
+        finally:
+            db.close()
+        await asyncio.sleep(10)
+
+
 @app.on_event("startup")
 async def initialize_knowledge_base_tables():
     Base.metadata.create_all(bind=engine)
@@ -500,10 +571,58 @@ async def initialize_knowledge_base_tables():
     asyncio.create_task(
         historical_solution_timeout_checker()
     )
+    asyncio.create_task(
+        ticket_conversation_timeout_checker()
+    )
 
-# Conversation state is currently stored in memory. For production, move this
-# to a persistent store such as Redis or the database.
+# In-memory cache is only an optimization. Active ticket-raising state is
+# also persisted in PostgreSQL so browser reloads and backend restarts are safe.
 conversation_states = {}
+
+
+def _persist_pending_ticket_state(state):
+    """Persist only active ticket-raising workflows; never FAQ/general chat."""
+    session_id = state.get("session_id")
+    company_id = state.get("company_id")
+    chatbot_id = state.get("chatbot_id")
+    pending_ticket = state.get("pending_ticket")
+    db = SessionLocal()
+    try:
+        row = db.query(PendingTicketConversation).filter(
+            PendingTicketConversation.company_id == company_id,
+            PendingTicketConversation.chatbot_id == chatbot_id,
+            PendingTicketConversation.session_id == session_id,
+        ).first()
+        if not pending_ticket:
+            if row:
+                db.delete(row)
+                db.commit()
+            return
+        snapshot = json.loads(json.dumps(state, ensure_ascii=False, default=str))
+        status = "awaiting_confirmation" if state.get("duplicate_confirmation") else "active"
+        if not row:
+            row = PendingTicketConversation(
+                company_id=company_id,
+                chatbot_id=chatbot_id,
+                session_id=session_id,
+                customer_id=state.get("customer_id"),
+                customer_email=pending_ticket.get("customer_email") or state.get("customer_email"),
+                state_data=snapshot,
+                status=status,
+            )
+            db.add(row)
+        else:
+            row.customer_id = state.get("customer_id")
+            row.customer_email = pending_ticket.get("customer_email") or state.get("customer_email")
+            row.state_data = snapshot
+            row.status = status
+            row.last_activity = datetime.now(timezone.utc)
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"PENDING TICKET STATE PERSIST ERROR: {exc}")
+    finally:
+        db.close()
 
 
 # ------------------------------------------------
@@ -775,10 +894,16 @@ def _save_and_return(state, history, user_message, reply, **payload):
         state["ticket_conversation_buffer"] = ticket_buffer
 
     elif payload.get("ticket_created") is True:
-        ticket_buffer.append({
-            "user_message": user_message,
-            "bot_reply": reply,
-        })
+        if state.pop("_timeout_submission", False):
+            ticket_buffer.append({
+                "user_message": "",
+                "bot_reply": reply,
+            })
+        else:
+            ticket_buffer.append({
+                "user_message": user_message,
+                "bot_reply": reply,
+            })
 
         try:
             for exchange in ticket_buffer:
@@ -798,6 +923,8 @@ def _save_and_return(state, history, user_message, reply, **payload):
 
     else:
         state.pop("ticket_conversation_buffer", None)
+
+    _persist_pending_ticket_state(state)
 
     thread_uuid = state.get("zep_thread_uuid")
     if thread_uuid:
@@ -1319,6 +1446,20 @@ def chat(data: dict):
     )
 
     state = conversation_states.setdefault(state_key, {})
+    # Restore the in-progress ticket workflow from PostgreSQL. This also
+    # restores its transcript when the customer reloads the widget.
+    restore_db = SessionLocal()
+    try:
+        saved = restore_db.query(PendingTicketConversation).filter(
+            PendingTicketConversation.company_id == company_id,
+            PendingTicketConversation.chatbot_id == chatbot_id,
+            PendingTicketConversation.session_id == session_id,
+            PendingTicketConversation.status.in_(["active", "awaiting_confirmation"]),
+        ).first()
+        if saved and isinstance(saved.state_data, dict):
+            state.update(saved.state_data)
+    finally:
+        restore_db.close()
     print("CHAT STATE TRACE:", state_key, "pending:", (state.get("pending_ticket") or {}).get("step"), "state_id:", id(state))
     history = state.setdefault("history", [])
 
