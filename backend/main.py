@@ -1325,7 +1325,13 @@ def _get_ticket_intake_fields(company_id, intent):
             label = re.sub(r"[^a-z0-9]+", " ", str(category.get("label") or "").lower()).strip()
             normalized_category = re.sub(r"[^a-z0-9]+", " ", category_name).strip()
             if key == intent_key or (label and label == normalized_category):
-                fields.extend(category.get("fields") or [])
+                category_fields = list(category.get("fields") or [])
+                for field in category_fields:
+                    if field.get("key") == "email" and field.get("type") == "phone":
+                        field["key"] = "phone"
+                        if "email address" in str(field.get("prompt") or "").lower():
+                            field["prompt"] = "What phone number can our support team use to contact you?"
+                fields.extend(category_fields)
                 break
         return fields
     finally:
@@ -1347,6 +1353,11 @@ def _next_missing_global_ticket_field(pending_ticket, company_id):
         else:
             config = row.configuration if isinstance(row.configuration, dict) else {}
             global_fields = list(config.get("global_fields") or [])
+            for field in global_fields:
+                if field.get("key") == "email" and field.get("type") == "phone":
+                    field["key"] = "phone"
+                    if "email address" in str(field.get("prompt") or "").lower():
+                        field["prompt"] = "What phone number can our support team use to contact you?"
         values = pending_ticket.setdefault("custom_fields", {})
         skipped = set(pending_ticket.get("skipped_intake_fields") or [])
         for field in global_fields:
