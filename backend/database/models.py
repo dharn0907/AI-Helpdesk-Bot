@@ -10,6 +10,8 @@ from sqlalchemy import (
     ForeignKey,
     BigInteger,
     Float,
+    JSON,
+    UniqueConstraint,
 )
 from sqlalchemy.sql import func
 
@@ -164,6 +166,9 @@ class Ticket(Base):
 
     customer_email = Column(String(255), nullable=True)
 
+    # Company-configured answers collected by the chatbot (phone, order ID, etc.).
+    custom_fields = Column(JSON, nullable=False, default=dict)
+
     intent = Column(String(100), nullable=False)
 
     category = Column(String(100), nullable=True, index=True)
@@ -210,6 +215,11 @@ class KnowledgeBaseFile(Base):
     original_filename = Column(String(255), nullable=False)
     stored_filename = Column(String(255), nullable=False, unique=True)
     file_type = Column(String(20), nullable=False)
+    # Separates ordinary business knowledge from support/ticket procedures.
+    # Existing rows are migrated as general knowledge for backward compatibility.
+    knowledge_type = Column(
+        String(20), nullable=False, default="general", server_default="general", index=True
+    )
     row_count = Column(Integer, default=0, nullable=False)
     status = Column(String(30), default="processed", nullable=False)
 
@@ -626,3 +636,88 @@ class TicketComment(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
+
+
+class TicketIntakeConfiguration(Base):
+    """Company-owned ticket categories and configurable customer intake fields."""
+
+    __tablename__ = "ticket_intake_configurations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    company_id = Column(
+        Integer,
+        ForeignKey("companies.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
+    configuration = Column(JSON, nullable=False, default=dict)
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+
+class TicketConversationSettings(Base):
+    """Company-level inactivity policy for interrupted ticket conversations."""
+
+    __tablename__ = "ticket_conversation_settings"
+
+    id = Column(Integer, primary_key=True, index=True)
+    company_id = Column(
+        Integer,
+        ForeignKey("companies.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
+    enabled = Column(Boolean, nullable=False, default=True)
+    timeout_minutes = Column(Integer, nullable=False, default=2)
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+
+class PendingTicketConversation(Base):
+    """Durable state for a ticket-raising conversation awaiting customer input."""
+
+    __tablename__ = "pending_ticket_conversations"
+    __table_args__ = (
+        UniqueConstraint(
+            "company_id",
+            "chatbot_id",
+            "session_id",
+            name="uq_pending_ticket_conversation_scope",
+        ),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    company_id = Column(
+        Integer,
+        ForeignKey("companies.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    chatbot_id = Column(
+        BigInteger,
+        ForeignKey("chatbots.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    session_id = Column(String(100), nullable=False, index=True)
+    customer_id = Column(String(255), nullable=True, index=True)
+    customer_email = Column(String(255), nullable=True, index=True)
+    state_data = Column(JSON, nullable=False)
+    status = Column(String(30), nullable=False, default="active", index=True)
+    last_activity = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        index=True,
+    )
+    created_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )

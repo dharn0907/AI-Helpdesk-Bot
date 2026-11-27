@@ -235,6 +235,20 @@ function TicketDetails() {
               {ticket.customer_email || "Not provided"}
             </p>
 
+            {ticket.custom_fields && Object.keys(ticket.custom_fields).length > 0 && (
+              <div style={{ marginTop: "14px" }}>
+                <strong>Configured customer information:</strong>
+                <div style={{ display: "grid", gap: "8px", marginTop: "8px" }}>
+                  {Object.entries(ticket.custom_fields).map(([field, value]) => (
+                    <div key={field} style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                      <strong>{field.replace(/_/g, " ")}:</strong>
+                      <span>{String(value)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {ticket.additional_details?.trim() && (
               <div style={{ marginTop: "12px" }}>
                 <strong>

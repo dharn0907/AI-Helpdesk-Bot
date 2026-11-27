@@ -18,7 +18,10 @@ function ChatApp() {
   const [uploading, setUploading] = useState(false);
 
   const fileInputRef = useRef(null);
-  const sessionIdRef = useRef(crypto.randomUUID());
+  const sessionStorageKey = `helpdesk_session_id_${import.meta.env.VITE_BOT_PUBLIC_ID || "default"}`;
+  const sessionIdRef = useRef(
+    localStorage.getItem(sessionStorageKey) || crypto.randomUUID()
+  );
   const customerIdRef = useRef(
     localStorage.getItem("helpdesk_customer_id") || crypto.randomUUID()
   );
@@ -28,6 +31,36 @@ function ChatApp() {
       "helpdesk_customer_id",
       customerIdRef.current
     );
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem(sessionStorageKey, sessionIdRef.current);
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    const restorePendingTicketConversation = async () => {
+      const botPublicId = import.meta.env.VITE_BOT_PUBLIC_ID;
+      if (!botPublicId) return;
+      try {
+        const params = new URLSearchParams({
+          session_id: sessionIdRef.current,
+          bot_public_id: botPublicId
+        });
+        const response = await fetch(`http://127.0.0.1:8000/chat/resume?${params.toString()}`);
+        if (!response.ok) return;
+        const data = await response.json();
+        if (active && Array.isArray(data.messages) && data.messages.length) {
+          setMessages(data.messages);
+        }
+      } catch (error) {
+        console.warn("Could not restore pending ticket conversation:", error);
+      }
+    };
+    restorePendingTicketConversation();
+    return () => {
+      active = false;
+    };
   }, []);
   const requestInProgressRef = useRef(false);
 

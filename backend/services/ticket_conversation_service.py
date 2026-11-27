@@ -1,4 +1,5 @@
 import json
+import re
 
 from services.llm_service import (
     llm,
@@ -74,6 +75,44 @@ CONVERSATION HISTORY:
 
 LATEST CUSTOMER MESSAGE:
 {customer_message}
+
+CORRECTIONS, REVERSED ASSUMPTIONS, AND CONTRADICTORY FACTS (HIGHEST PRIORITY):
+- Treat the customer's latest statement as potentially correcting an earlier
+  assumption or statement. Understand what the customer is correcting, not
+  just the literal words in the latest message.
+- A correction can be explicit ("No, I haven't placed an order") or
+  conversational ("I meant before buying", "not that one", "actually...").
+- Compare the latest statement with BOTH the customer's earlier facts and
+  the assumptions embedded in the assistant's previous question.
+- Example: the customer first says an order has not arrived, is asked for an
+  order ID, then says "No, I didn't place an order". This conflicts with the
+  earlier claim that an order was not received. Unless the customer explicitly
+  says the earlier statement was a mistake, this is NOT yet a resolved
+  correction. You MUST set action=ADD_DETAIL, include a contradiction, set
+  needs_clarification=true and ask exactly:
+  "Just to clarify: earlier you mentioned that your order hadn't arrived, but
+  now you've said you haven't placed an order. Did you mean that you haven't
+  placed an order yet, or that you placed one but haven't received it?"
+  Do NOT ask what product they want to buy yet. Wait for the customer's
+  answer before switching to a pre-purchase enquiry or continuing delivery
+  investigation. Do NOT create a ticket during this clarification.
+- If the latest statement clearly corrects the earlier fact, accept the
+  corrected fact, list it in corrections, update the summary, and do not
+  preserve the obsolete fact as true.
+- If both statements cannot be true and the customer has not clearly said
+  which one is correct, populate contradictions, set needs_clarification=true,
+  and provide one short clarification_question that distinguishes the
+  possibilities. Preserve the existing complaint until clarified.
+- If the new message means the customer has not purchased/placed/booked/
+  subscribed yet, distinguish a pre-purchase enquiry from a problem with an
+  existing transaction. Do not invent an order or create a support ticket
+  for a purchase that has not happened.
+- A side question does not erase the active issue. A clear change of topic
+  may pause it, but retain the collected details unless the customer
+  explicitly cancels the support request.
+- A negative answer to a request for an identifier ("I don't have an order
+  number") is not by itself proof that no order exists. Use the rest of the
+  customer's sentence and conversation history to determine the meaning.
 
 FIRST: CLASSIFY THE CUSTOMER'S MESSAGE.
 
@@ -492,6 +531,72 @@ For non-issue messages, do not modify the existing issue information.
     needs_clarification = (
         result.get("needs_clarification") is True
     )
+
+    # Deterministic safeguard for a direct contradiction between an
+    # earlier undelivered-order complaint and a later statement that no
+    # order was placed. The LLM must not silently resolve this ambiguity.
+    earlier_delivery_claim = bool(
+        re.search(
+            r"\b(order|delivery|shipment)\b.{0,100}\b("
+            r"not received|never received|haven't received|have not received|"
+            r"rec(e)?iv(ed)|hasn't arrived|has not arrived|not arrived|still waiting"
+            r")\b|\b("
+            r"not received|never received|haven't received|have not received|"
+            r"rec(e)?iv(ed)|hasn't arrived|has not arrived|not arrived|still waiting"
+            r").{0,100}\b(order|delivery|shipment)\b",
+            original_complaint,
+            re.IGNORECASE,
+        )
+    )
+    latest_denies_purchase = bool(
+        re.search(
+            r"\b(didn'?t|did not|haven't|have not|never)\b"
+            r".{0,35}\b(place|placed|buy|bought|purchase|purchased|order)\b",
+            customer_message,
+            re.IGNORECASE,
+        )
+    )
+    if (
+        earlier_delivery_claim
+        and latest_denies_purchase
+        and not pending_ticket.get("pending_contradictions")
+    ):
+        action = "ADD_DETAIL"
+        relevant_details = customer_message.strip()
+        issue_summary = existing_summary or original_complaint
+        contradictions = [
+            "Customer previously reported an order had not arrived, "
+            "but now says they did not place an order."
+        ]
+        corrections = []
+        information_complete = False
+        needs_clarification = True
+        clarification_question = (
+            "Just to clarify: earlier you mentioned that your order hadn't "
+            "arrived, but now you've said you haven't placed an order. "
+            "Did you mean that you haven't placed an order yet, or that you "
+            "placed one but haven't received it?"
+        )
+        result["resolves_pending_contradiction"] = False
+
+    # Keep semantic contradictions inside the active ticket-investigation
+    # path. Without this normalization, a model response that correctly
+    # detects a conflict but labels the action UNCERTAIN can fall through to
+    # ordinary chat and lose the customer's pending support context.
+    if contradictions and action not in {
+        "GREETING", "SIDE_QUESTION", "UNRELATED", "PAUSE", "CANCEL"
+    }:
+        action = "ADD_DETAIL"
+        needs_clarification = True
+        information_complete = False
+        if not clarification_question:
+            clarification_question = (
+                "I may have misunderstood one detail. Did you mean that "
+                "you haven't placed an order yet, or that you placed one "
+                "but it hasn't arrived?"
+            )
+        if not issue_summary:
+            issue_summary = existing_summary or original_complaint
 
     if action in {
         "GREETING",

@@ -34,6 +34,7 @@ export default function AdminDashboard({ onBack, session, chatbot }) {
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [selectedFile, setSelectedFile] = useState(null);
+  const [selectedKnowledgeType, setSelectedKnowledgeType] = useState("general");
   const [knowledgeFiles, setKnowledgeFiles] = useState([]);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -62,6 +63,14 @@ export default function AdminDashboard({ onBack, session, chatbot }) {
   const [smtpConfigured, setSmtpConfigured] = useState(false);
   const [smtpLoading, setSmtpLoading] = useState(false);
   const [smtpMessage, setSmtpMessage] = useState("");
+  const [ticketTimeoutEnabled, setTicketTimeoutEnabled] = useState(true);
+  const [ticketTimeoutMinutes, setTicketTimeoutMinutes] = useState("2");
+  const [ticketTimeoutLoading, setTicketTimeoutLoading] = useState(false);
+  const [ticketTimeoutMessage, setTicketTimeoutMessage] = useState("");
+  const [ticketIntake, setTicketIntake] = useState({ global_fields: [], categories: [] });
+  const [ticketIntakeLoading, setTicketIntakeLoading] = useState(false);
+  const [ticketIntakeMessage, setTicketIntakeMessage] = useState("");
+
 
 
   const headers = (extra = {}) => ({
@@ -115,6 +124,150 @@ export default function AdminDashboard({ onBack, session, chatbot }) {
       setSupportEmailLoading(false);
     }
   };
+  const loadTicketConversationTimeout = async () => {
+    const response = await fetch(`${API}/companies/current/ticket-conversation-timeout`, {
+      headers: headers()
+    });
+    const data = await readResponse(response);
+    setTicketTimeoutEnabled(data.enabled !== false);
+    setTicketTimeoutMinutes(String(data.timeout_minutes || 2));
+  };
+
+  const saveTicketConversationTimeout = async () => {
+    setTicketTimeoutLoading(true);
+    setTicketTimeoutMessage("");
+    try {
+      const response = await fetch(`${API}/companies/current/ticket-conversation-timeout`, {
+        method: "PATCH",
+        headers: headers(),
+        body: JSON.stringify({
+          enabled: ticketTimeoutEnabled,
+          timeout_minutes: Number(ticketTimeoutMinutes)
+        })
+      });
+      const data = await readResponse(response);
+      setTicketTimeoutMessage(data.message || "Inactivity settings saved.");
+    } catch (err) {
+      setTicketTimeoutMessage(err.message || "Could not save inactivity settings.");
+    } finally {
+      setTicketTimeoutLoading(false);
+    }
+  };
+
+  const loadTicketIntake = async () => {
+    const response = await fetch(`${API}/companies/current/ticket-intake`, { headers: headers() });
+    const data = await readResponse(response);
+    const normalizeField = (field) => {
+      if (field?.key === "email" && field?.type === "phone") {
+        return {
+          ...field,
+          key: "phone",
+          prompt: /email address/i.test(field.prompt || "")
+            ? "What phone number can our support team use to contact you?"
+            : field.prompt,
+          required: true,
+        };
+      }
+      return field;
+    };
+    setTicketIntake({
+      global_fields: (Array.isArray(data.global_fields) ? data.global_fields : []).map(normalizeField),
+      categories: (Array.isArray(data.categories) ? data.categories : []).map(category => ({
+        ...category,
+        fields: (Array.isArray(category.fields) ? category.fields : []).map(normalizeField),
+      })),
+    });
+  };
+
+  const saveTicketIntake = async () => {
+    setTicketIntakeLoading(true);
+    setTicketIntakeMessage("");
+    try {
+      const response = await fetch(`${API}/companies/current/ticket-intake`, { method: "PUT", headers: headers(), body: JSON.stringify(ticketIntake) });
+      const data = await readResponse(response);
+      setTicketIntake(data.configuration || ticketIntake);
+      setTicketIntakeMessage(data.message || "Ticket information settings saved.");
+    } catch (err) {
+      setTicketIntakeMessage(err.message || "Could not save ticket information settings.");
+    } finally { setTicketIntakeLoading(false); }
+  };
+
+  const addIntakeField = (scope, categoryIndex = -1) => {
+    const field = { key: `custom_field_${Date.now().toString(36)}`, label: "New information", type: "text", required: true, prompt: "Could you provide this information?" };
+    setTicketIntake(current => {
+      if (scope === "global") return { ...current, global_fields: [...current.global_fields, field] };
+      const categories = [...current.categories];
+      categories[categoryIndex] = { ...categories[categoryIndex], fields: [...(categories[categoryIndex].fields || []), field] };
+      return { ...current, categories };
+    });
+  };
+
+  const updateIntakeField = (scope, index, property, value, categoryIndex = -1) => {
+    setTicketIntake(current => {
+      const updateField = (field) => {
+        const next = { ...field, [property]: value };
+        // Changing a field's data type must also change its internal key and
+        // default customer-facing question. Otherwise a phone field can still
+        // be treated as the legacy "email" field by the ticket workflow.
+        if (property === "type") {
+          if (field.key === "email" || field.key === "phone" || field.key?.startsWith("custom_field_")) {
+            next.key = value === "email" ? "email" : value === "phone" ? "phone" : `custom_field_${Date.now().toString(36)}`;
+          }
+          if (!field.prompt || /email address|phone number|provide this information/i.test(field.prompt)) {
+            next.prompt = value === "email"
+              ? "What email address should our support team use to send you updates?"
+              : value === "phone"
+                ? "What phone number can our support team use to contact you?"
+                : "Could you provide this information?";
+          }
+          if (value === "email" || value === "phone") next.required = true;
+        }
+        return next;
+      };
+      if (scope === "global") {
+        const global_fields = [...current.global_fields]; global_fields[index] = updateField(global_fields[index]);
+        return { ...current, global_fields };
+      }
+      const categories = [...current.categories]; const fields = [...(categories[categoryIndex].fields || [])];
+      fields[index] = updateField(fields[index]); categories[categoryIndex] = { ...categories[categoryIndex], fields };
+      return { ...current, categories };
+    });
+  };
+
+  const removeIntakeField = (scope, index, categoryIndex = -1) => {
+    setTicketIntake(current => {
+      if (scope === "global") return { ...current, global_fields: current.global_fields.filter((_, i) => i !== index) };
+      const categories = [...current.categories]; categories[categoryIndex] = { ...categories[categoryIndex], fields: (categories[categoryIndex].fields || []).filter((_, i) => i !== index) };
+      return { ...current, categories };
+    });
+  };
+
+  const addIntakeCategory = () => {
+    const key = `category_${Date.now().toString(36)}`;
+    setTicketIntake(current => ({ ...current, categories: [...current.categories, { key, label: "New ticket category", fields: [] }] }));
+  };
+
+  const updateIntakeCategory = (index, property, value) => {
+    setTicketIntake(current => { const categories = [...current.categories]; categories[index] = { ...categories[index], [property]: value }; return { ...current, categories }; });
+  };
+
+  const removeIntakeCategory = (index) => setTicketIntake(current => ({ ...current, categories: current.categories.filter((_, i) => i !== index) }));
+
+  const renderIntakeFieldEditor = (field, index, scope, categoryIndex = -1) => (
+    <div key={field.key || index} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 130px auto", gap: 8, alignItems: "center", padding: 10, border: "1px solid #e5e7eb", borderRadius: 8, marginTop: 8 }}>
+      <input value={field.label || ""} onChange={e => updateIntakeField(scope, index, "label", e.target.value, categoryIndex)} placeholder="Field label" style={{ ...inputStyle, margin: 0 }} />
+      <input value={field.prompt || ""} onChange={e => updateIntakeField(scope, index, "prompt", e.target.value, categoryIndex)} placeholder="Question the bot asks" style={{ ...inputStyle, margin: 0 }} />
+      <select value={field.type || "text"} onChange={e => updateIntakeField(scope, index, "type", e.target.value, categoryIndex)} style={{ ...inputStyle, margin: 0 }}>
+        {["text", "textarea", "email", "phone", "number", "date", "select"].map(type => <option key={type} value={type}>{type}</option>)}
+      </select>
+      <button type="button" onClick={() => removeIntakeField(scope, index, categoryIndex)} style={{ border: "1px solid #dc2626", color: "#dc2626", background: "white", borderRadius: 6, padding: "8px 10px" }}>Remove</button>
+      <label style={{ gridColumn: "1 / -1", display: "flex", gap: 8, alignItems: "center", fontSize: 13 }}>
+        <input type="checkbox" checked={Boolean(field.required)} onChange={e => updateIntakeField(scope, index, "required", e.target.checked, categoryIndex)} /> Required <span style={{ color: "#6b7280" }}>Field key: {field.key} · Changing the type updates its key and suggested question.</span>
+      </label>
+      {field.type === "select" && <input value={(field.options || []).join(", ")} onChange={e => updateIntakeField(scope, index, "options", e.target.value.split(",").map(v => v.trim()).filter(Boolean), categoryIndex)} placeholder="Dropdown options, comma separated" style={{ ...inputStyle, gridColumn: "1 / -1", margin: 0 }} />}
+    </div>
+  );
+
   const loadSmtpSettings = async () => {
     const response = await fetch(`${API}/companies/smtp-settings`, {
       headers: headers()
@@ -196,6 +349,7 @@ export default function AdminDashboard({ onBack, session, chatbot }) {
       setCompanyName(data.company_name);
       setConfig({ ...emptyConfig, ...data.configuration });
       await loadSupportEmail();
+      await loadTicketConversationTimeout();
       await loadSmtpSettings();
 
       await loadKnowledgeFiles();
@@ -223,6 +377,10 @@ export default function AdminDashboard({ onBack, session, chatbot }) {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    loadTicketIntake().catch(err => setTicketIntakeMessage(err.message));
+  }, [session.token, session.company.id]);
 
   useEffect(() => {
     setCompanyId(session.company.id);
@@ -449,6 +607,7 @@ export default function AdminDashboard({ onBack, session, chatbot }) {
     try {
       const formData = new FormData();
       formData.append("file", selectedFile);
+      formData.append("knowledge_type", selectedKnowledgeType);
 
       const response = await fetch(`${API}/knowledge-base/upload`, {
         method: "POST",
@@ -466,6 +625,7 @@ export default function AdminDashboard({ onBack, session, chatbot }) {
       );
 
       setSelectedFile(null);
+      setSelectedKnowledgeType("general");
 
       const fileInput = document.getElementById("knowledge-file-input");
       if (fileInput) fileInput.value = "";
@@ -863,6 +1023,89 @@ export default function AdminDashboard({ onBack, session, chatbot }) {
                 )}
               </form>
             </section>
+            <section style={{ background: "#ffffff", border: "1px solid #e5e7eb", borderRadius: 10, padding: 20, marginBottom: 18 }}>
+              <h2 style={{ fontSize: 19, marginTop: 0 }}>Ticket Information Builder</h2>
+              <p style={{ color: "#6b7280", fontSize: 13 }}>Choose what this company's chatbot collects for every ticket and for individual categories. Required fields must be provided. Optional fields are asked conversationally but customers can reply SKIP. Email is not mandatory unless you add it as a required field.</p>
+              <h3>Information for every ticket</h3>
+              {ticketIntake.global_fields.map((field, index) => renderIntakeFieldEditor(field, index, "global"))}
+              <button type="button" onClick={() => addIntakeField("global")} style={{ ...buttonStyle, marginTop: 10 }}>+ Add global field</button>
+              <div style={{ borderTop: "1px solid #e5e7eb", margin: "20px 0" }} />
+              <h3>Ticket categories and their fields</h3>
+              <p style={{ color: "#6b7280", fontSize: 12 }}>Use standard category names such as Payment / Billing, Delivery / Shipping, Login / Authentication, Refunds / Returns, Technical Issues, Account Management, Product / Service Questions or Feature Requests. For a custom intent, set its key to the intent name used by your chatbot.</p>
+              {ticketIntake.categories.map((category, categoryIndex) => (
+                <div key={category.key || categoryIndex} style={{ border: "1px solid #d1d5db", borderRadius: 8, padding: 14, marginTop: 12 }}>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <input value={category.label || ""} onChange={e => updateIntakeCategory(categoryIndex, "label", e.target.value)} placeholder="Category name" style={{ ...inputStyle, margin: 0 }} />
+                    <input value={category.key || ""} onChange={e => updateIntakeCategory(categoryIndex, "key", e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, "_"))} placeholder="Intent key (e.g. payment_issue)" style={{ ...inputStyle, margin: 0 }} />
+                    <button type="button" onClick={() => removeIntakeCategory(categoryIndex)} style={{ border: "1px solid #dc2626", color: "#dc2626", background: "white", borderRadius: 6, padding: "8px 10px" }}>Delete category</button>
+                  </div>
+                  <p style={{ color: "#6b7280", fontSize: 12 }}>Category key: {category.key}</p>
+                  {(category.fields || []).map((field, index) => renderIntakeFieldEditor(field, index, "category", categoryIndex))}
+                  <button type="button" onClick={() => addIntakeField("category", categoryIndex)} style={{ ...buttonStyle, marginTop: 10 }}>+ Add category field</button>
+                </div>
+              ))}
+              <button type="button" onClick={addIntakeCategory} style={{ ...buttonStyle, marginTop: 12 }}>+ Generate ticket category</button>
+              <div style={{ marginTop: 14 }}>
+                <button type="button" onClick={saveTicketIntake} disabled={ticketIntakeLoading} style={buttonStyle}>{ticketIntakeLoading ? "Saving..." : "Save Ticket Information Settings"}</button>
+                {ticketIntakeMessage && <p style={{ color: "#2563eb", fontSize: 13 }}>{ticketIntakeMessage}</p>}
+              </div>
+            </section>
+
+            <section style={{
+              background: "#ffffff",
+              border: "1px solid #e5e7eb",
+              borderRadius: 10,
+              padding: 20,
+              marginBottom: 18
+            }}>
+              <h2 style={{ fontSize: 19, marginTop: 0 }}>
+                Ticket Conversation Inactivity
+              </h2>
+              <p style={{ color: "#6b7280", fontSize: 13 }}>
+                If a customer stops replying while a support ticket is being prepared, the bot submits the ticket after this period only when all required information configured in Ticket Information Builder has been collected. New customer messages reset the timer. The default is 2 minutes.
+              </p>
+              <label style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 12 }}>
+                <input
+                  type="checkbox"
+                  checked={ticketTimeoutEnabled}
+                  onChange={(e) => setTicketTimeoutEnabled(e.target.checked)}
+                />
+                Enable automatic ticket submission after inactivity
+              </label>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                <label htmlFor="ticket-timeout-minutes">Inactivity period (minutes)</label>
+                <input
+                  id="ticket-timeout-minutes"
+                  type="number"
+                  min="1"
+                  max="30"
+                  value={ticketTimeoutMinutes}
+                  onChange={(e) => setTicketTimeoutMinutes(e.target.value)}
+                  style={{ ...inputStyle, width: 110, marginBottom: 0 }}
+                />
+                <button
+                  type="button"
+                  disabled={ticketTimeoutLoading}
+                  onClick={saveTicketConversationTimeout}
+                  style={{
+                    padding: "10px 18px",
+                    background: "#2563eb",
+                    color: "#ffffff",
+                    border: "none",
+                    borderRadius: 6,
+                    cursor: "pointer"
+                  }}
+                >
+                  {ticketTimeoutLoading ? "Saving..." : "Save Inactivity Settings"}
+                </button>
+              </div>
+              {ticketTimeoutMessage && (
+                <p style={{ color: "#6b7280", fontSize: 13, marginBottom: 0 }}>
+                  {ticketTimeoutMessage}
+                </p>
+              )}
+            </section>
+
             <section style={{
               background: "#ffffff",
               border: "1px solid #e5e7eb",
@@ -1037,8 +1280,24 @@ export default function AdminDashboard({ onBack, session, chatbot }) {
                 marginBottom: 20
               }}>
                 <h3 style={{ fontSize: 15, marginTop: 0 }}>
-                  Upload Company Data
+                  Upload Knowledge Base Data
                 </h3>
+
+                <p style={{ fontSize: 13, color: "#6b7280" }}>
+                  Choose which knowledge collection this file belongs to. The chatbot retrieves only the matching collection for each intent. Existing uploaded files remain in General Knowledge.
+                </p>
+
+                <label style={{ display: "block", fontWeight: 600, fontSize: 13, marginBottom: 7 }}>
+                  Knowledge Base Type
+                </label>
+                <select
+                  value={selectedKnowledgeType}
+                  onChange={(e) => setSelectedKnowledgeType(e.target.value)}
+                  style={{ ...inputStyle, marginBottom: 14 }}
+                >
+                  <option value="general">General Knowledge — FAQs, products, services and business information</option>
+                  <option value="ticket">Ticket Knowledge — troubleshooting, complaints and support procedures</option>
+                </select>
 
                 <p style={{ fontSize: 13, color: "#6b7280" }}>
                   Supported formats: CSV and XLSX. Maximum file size: 10 MB.
@@ -1128,69 +1387,130 @@ export default function AdminDashboard({ onBack, session, chatbot }) {
                   </p>
                 ) : (
                   <div style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: 10
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+                    gap: 16,
+                    marginTop: 12
                   }}>
-                    {knowledgeFiles.map((file) => (
-                      <div
-                        key={file.id}
-                        style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          alignItems: "center",
-                          gap: 12,
-                          flexWrap: "wrap",
-                          padding: 14,
-                          border: "1px solid #e5e7eb",
-                          borderRadius: 9
-                        }}
-                      >
-                        <div style={{ flex: "1 1 200px" }}>
-                          <strong style={{
-                            display: "block",
-                            fontSize: 14,
-                            overflowWrap: "anywhere"
-                          }}>
-                            {file.filename}
-                          </strong>
+                    {[
+                      {
+                        type: "general",
+                        title: "General Knowledge Files",
+                        description: "Company information, products, services and FAQs."
+                      },
+                      {
+                        type: "ticket",
+                        title: "Ticket Knowledge Files",
+                        description: "Support procedures, troubleshooting and ticket policies."
+                      }
+                    ].map((group) => {
+                      const groupFiles = knowledgeFiles.filter(
+                        (file) => (file.knowledge_type || "general") === group.type
+                      );
 
+                      return (
+                        <div
+                          key={group.type}
+                          style={{
+                            border: "1px solid #e5e7eb",
+                            borderRadius: 10,
+                            padding: 14,
+                            background: "#fafafa",
+                            minWidth: 0
+                          }}
+                        >
+                          <h4 style={{ fontSize: 15, margin: "0 0 5px" }}>
+                            {group.title}
+                          </h4>
                           <p style={{
                             color: "#6b7280",
                             fontSize: 12,
-                            margin: "5px 0"
+                            margin: "0 0 12px"
                           }}>
-                            {file.file_type.toUpperCase()} ·{" "}
-                            {file.row_count} records · {file.status}
+                            {group.description}
                           </p>
 
-                          {file.created_at && (
+                          {groupFiles.length === 0 ? (
                             <p style={{
                               color: "#9ca3af",
-                              fontSize: 11,
+                              fontSize: 13,
+                              padding: 12,
+                              background: "#fff",
+                              borderRadius: 8,
                               margin: 0
                             }}>
-                              Uploaded:{" "}
-                              {new Date(file.created_at).toLocaleString()}
+                              No {group.type === "ticket" ? "ticket" : "general"} knowledge files uploaded.
                             </p>
+                          ) : (
+                            <div style={{
+                              display: "flex",
+                              flexDirection: "column",
+                              gap: 10
+                            }}>
+                              {groupFiles.map((file) => (
+                                <div
+                                  key={file.id}
+                                  style={{
+                                    display: "flex",
+                                    justifyContent: "space-between",
+                                    alignItems: "center",
+                                    gap: 12,
+                                    flexWrap: "wrap",
+                                    padding: 12,
+                                    border: "1px solid #e5e7eb",
+                                    borderRadius: 9,
+                                    background: "#fff"
+                                  }}
+                                >
+                                  <div style={{ flex: "1 1 150px", minWidth: 0 }}>
+                                    <strong style={{
+                                      display: "block",
+                                      fontSize: 14,
+                                      overflowWrap: "anywhere"
+                                    }}>
+                                      {file.filename}
+                                    </strong>
+
+                                    <p style={{
+                                      color: "#6b7280",
+                                      fontSize: 12,
+                                      margin: "5px 0"
+                                    }}>
+                                      {file.file_type.toUpperCase()} · {file.row_count} records · {file.status}
+                                    </p>
+
+                                    {file.created_at && (
+                                      <p style={{
+                                        color: "#9ca3af",
+                                        fontSize: 11,
+                                        margin: 0
+                                      }}>
+                                        Uploaded:{" "}
+                                        {new Date(file.created_at).toLocaleString()}
+                                      </p>
+                                    )}
+                                  </div>
+
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      deleteKnowledgeFile(file.id, file.filename)
+                                    }
+                                    style={{
+                                      ...buttonStyle,
+                                      background: "#dc2626",
+                                      padding: "8px 13px"
+                                    }}
+                                  >
+                                    Delete
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
                           )}
                         </div>
-
-                        <button
-                          type="button"
-                          onClick={() =>
-                            deleteKnowledgeFile(file.id, file.filename)
-                          }
-                          style={{
-                            ...buttonStyle,
-                            background: "#dc2626",
-                            padding: "8px 13px"
-                          }}
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>

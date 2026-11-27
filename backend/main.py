@@ -2,12 +2,14 @@
 
 import re
 import time
+import json
 
 from urllib import response
 import uuid
 import asyncio
 from datetime import datetime, timezone
 from fastapi import FastAPI, HTTPException
+from sqlalchemy import text
 from services.zep_memory_service import save_assistant_turn, start_user_turn
 from services.first_level_intent_service import classify_first_level_intent
 from fastapi.middleware.cors import CORSMiddleware
@@ -48,6 +50,9 @@ from database.models import (
     ConversationMessage,
     HistoricalSolutionFeedback,
     HistoricalSolutionAttempt,
+    PendingTicketConversation,
+    TicketConversationSettings,
+    TicketIntakeConfiguration,
 )
 
 def _get_active_company_config(company_id=None):
@@ -114,7 +119,8 @@ def generate_llm_response(
     intent: str = "general_enquiry",
     context: str = "",
     conversation_history: list = None,
-    company_id=None
+    company_id=None,
+    knowledge_type: str = None,
 ) -> str:
     """
     Generate a response using company configuration and relevant
@@ -157,10 +163,31 @@ def generate_llm_response(
                     "advanced_instructions": configuration.advanced_instructions or "",
                 }
 
+            # Retrieval is deliberately isolated by knowledge type.
+            # Only active complaint-investigation responses receive ticket KB
+            # context; greetings, FAQs, business questions and side questions
+            # use general KB context. Legacy files default to general.
+            selected_knowledge_type = (
+                "ticket" if knowledge_type == "ticket" or intent == "customer_issue"
+                else "general"
+            )
             records = (
                 db.query(KnowledgeBaseRecord)
-                .filter(KnowledgeBaseRecord.company_id == company.id)
+                .join(
+                    KnowledgeBaseFile,
+                    KnowledgeBaseFile.id == KnowledgeBaseRecord.file_id,
+                )
+                .filter(
+                    KnowledgeBaseRecord.company_id == company.id,
+                    KnowledgeBaseFile.knowledge_type == selected_knowledge_type,
+                )
                 .all()
+            )
+            print(
+                "KNOWLEDGE BASE ROUTING:",
+                selected_knowledge_type,
+                "records:", len(records),
+                "company:", company.id,
             )
 
             
@@ -493,17 +520,172 @@ async def historical_solution_timeout_checker():
         await asyncio.sleep(60)
 
 
+async def ticket_conversation_timeout_checker():
+    """Submit incomplete ticket workflows after company-configured inactivity."""
+    print("Ticket conversation inactivity checker started.")
+    while True:
+        db = SessionLocal()
+        try:
+            active_rows = db.query(PendingTicketConversation).filter(
+                PendingTicketConversation.status == "active"
+            ).all()
+            now = datetime.now(timezone.utc)
+            for row in active_rows:
+                settings = db.query(TicketConversationSettings).filter(
+                    TicketConversationSettings.company_id == row.company_id
+                ).first()
+                enabled = settings.enabled if settings else True
+                timeout_minutes = settings.timeout_minutes if settings else 2
+                if not enabled:
+                    continue
+                last_activity = row.last_activity
+                if last_activity is None:
+                    continue
+                if last_activity.tzinfo is None:
+                    last_activity = last_activity.replace(tzinfo=timezone.utc)
+                if (now - last_activity).total_seconds() < timeout_minutes * 60:
+                    continue
+
+                state = row.state_data if isinstance(row.state_data, dict) else {}
+                pending = state.get("pending_ticket") or {}
+                email = pending.get("customer_email") or state.get("customer_email")
+                if not pending:
+                    db.delete(row)
+                    db.commit()
+                    continue
+                if email and valid_email(email):
+                    pending["customer_email"] = email
+                if _next_missing_ticket_field(pending, row.company_id):
+                    row.status = "awaiting_confirmation"
+                    db.commit()
+                    continue
+
+                # Recover safely if a process stopped after creating this
+                # exact ticket but before removing its pending conversation.
+                existing_ticket = db.query(Ticket).filter(
+                    Ticket.session_id == row.session_id,
+                    Ticket.company_id == row.company_id,
+                    Ticket.chatbot_id == row.chatbot_id,
+                    Ticket.customer_email == email,
+                    Ticket.customer_message == (pending.get("original_complaint") or ""),
+                ).first()
+                if existing_ticket:
+                    db.delete(row)
+                    db.commit()
+                    continue
+
+                state["session_id"] = row.session_id
+                state["company_id"] = row.company_id
+                state["chatbot_id"] = row.chatbot_id
+                state["_timeout_submission"] = True
+                history = state.setdefault("history", [])
+                try:
+                    result = _finish_ticket_creation(
+                        state,
+                        history,
+                        "The customer did not respond before the ticket conversation timed out.",
+                        row.session_id,
+                        pending,
+                    )
+                    state_key = (
+                        f"{state.get('bot_public_id')}:{row.session_id}"
+                        if state.get("bot_public_id")
+                        else row.session_id
+                    )
+                    conversation_states[state_key] = state
+                    print(
+                        "TICKET CONVERSATION TIMEOUT:",
+                        row.session_id,
+                        result.get("ticket_id"),
+                        result.get("conversation_status"),
+                    )
+                except Exception as exc:
+                    print(f"TICKET CONVERSATION TIMEOUT SUBMISSION ERROR: {exc}")
+                    row.status = "active"
+                    row.last_activity = now
+                    db.commit()
+        except Exception as exc:
+            db.rollback()
+            print(f"Ticket conversation timeout checker error: {exc}")
+        finally:
+            db.close()
+        await asyncio.sleep(10)
+
+
 @app.on_event("startup")
 async def initialize_knowledge_base_tables():
     Base.metadata.create_all(bind=engine)
+    # create_all does not add columns to existing Supabase tables.
+    with engine.begin() as connection:
+        connection.execute(text(
+            "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS "
+            "custom_fields JSONB NOT NULL DEFAULT '{}'::jsonb"
+        ))
+        # Safe in-place migration: pre-existing uploaded files remain general KB.
+        connection.execute(text(
+            "ALTER TABLE knowledge_base_files ADD COLUMN IF NOT EXISTS "
+            "knowledge_type VARCHAR(20) NOT NULL DEFAULT 'general'"
+        ))
+        connection.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_knowledge_base_files_knowledge_type "
+            "ON knowledge_base_files (knowledge_type)"
+        ))
 
     asyncio.create_task(
         historical_solution_timeout_checker()
     )
+    asyncio.create_task(
+        ticket_conversation_timeout_checker()
+    )
 
-# Conversation state is currently stored in memory. For production, move this
-# to a persistent store such as Redis or the database.
+# In-memory cache is only an optimization. Active ticket-raising state is
+# also persisted in PostgreSQL so browser reloads and backend restarts are safe.
 conversation_states = {}
+
+
+def _persist_pending_ticket_state(state):
+    """Persist only active ticket-raising workflows; never FAQ/general chat."""
+    session_id = state.get("session_id")
+    company_id = state.get("company_id")
+    chatbot_id = state.get("chatbot_id")
+    pending_ticket = state.get("pending_ticket")
+    db = SessionLocal()
+    try:
+        row = db.query(PendingTicketConversation).filter(
+            PendingTicketConversation.company_id == company_id,
+            PendingTicketConversation.chatbot_id == chatbot_id,
+            PendingTicketConversation.session_id == session_id,
+        ).first()
+        if not pending_ticket:
+            if row:
+                db.delete(row)
+                db.commit()
+            return
+        snapshot = json.loads(json.dumps(state, ensure_ascii=False, default=str))
+        status = "awaiting_confirmation" if state.get("duplicate_confirmation") else "active"
+        if not row:
+            row = PendingTicketConversation(
+                company_id=company_id,
+                chatbot_id=chatbot_id,
+                session_id=session_id,
+                customer_id=state.get("customer_id"),
+                customer_email=pending_ticket.get("customer_email") or state.get("customer_email"),
+                state_data=snapshot,
+                status=status,
+            )
+            db.add(row)
+        else:
+            row.customer_id = state.get("customer_id")
+            row.customer_email = pending_ticket.get("customer_email") or state.get("customer_email")
+            row.state_data = snapshot
+            row.status = status
+            row.last_activity = datetime.now(timezone.utc)
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        print(f"PENDING TICKET STATE PERSIST ERROR: {exc}")
+    finally:
+        db.close()
 
 
 # ------------------------------------------------
@@ -558,6 +740,18 @@ def is_small_talk(message):
     }
 
     return normalized in small_talk_messages
+
+
+def is_explicit_immediate_ticket_request(message):
+    """Recognize a clear instruction to submit the pending support request now."""
+    normalized = re.sub(r"[^a-z0-9' ]+", " ", str(message).lower())
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    patterns = (
+        r"\b(?:raise|create|submit|open|log)\s+(?:a\s+)?ticket\b",
+        r"\b(ticket|support request)\s+(?:now|immediately)\b",
+        r"\braise\s+(?:it|this|the request)\s+now\b",
+    )
+    return any(re.search(pattern, normalized) for pattern in patterns)
 
 
 def is_ticket_cancellation(message):
@@ -667,6 +861,7 @@ def create_support_ticket(
     session_id,
     company_id=None,
     chatbot_id=None,
+    custom_fields=None,
 ):
     
     """Create a ticket in the configured database."""
@@ -680,6 +875,7 @@ def create_support_ticket(
             customer_message=customer_message,
             additional_details=additional_details,
             customer_email=customer_email,
+            custom_fields=custom_fields or {},
             intent=intent,
             category=get_ticket_category(intent),
             priority="Medium",
@@ -756,17 +952,29 @@ def _save_and_return(state, history, user_message, reply, **payload):
     ticket_buffer = state.get("ticket_conversation_buffer", [])
 
     if state.get("pending_ticket"):
-        ticket_buffer.append({
-            "user_message": user_message,
-            "bot_reply": reply,
-        })
+        if state.pop("_timeout_submission", False):
+            ticket_buffer.append({
+                "user_message": "",
+                "bot_reply": reply,
+            })
+        else:
+            ticket_buffer.append({
+                "user_message": user_message,
+                "bot_reply": reply,
+            })
         state["ticket_conversation_buffer"] = ticket_buffer
 
     elif payload.get("ticket_created") is True:
-        ticket_buffer.append({
-            "user_message": user_message,
-            "bot_reply": reply,
-        })
+        if state.pop("_timeout_submission", False):
+            ticket_buffer.append({
+                "user_message": "",
+                "bot_reply": reply,
+            })
+        else:
+            ticket_buffer.append({
+                "user_message": user_message,
+                "bot_reply": reply,
+            })
 
         try:
             for exchange in ticket_buffer:
@@ -786,6 +994,8 @@ def _save_and_return(state, history, user_message, reply, **payload):
 
     else:
         state.pop("ticket_conversation_buffer", None)
+
+    _persist_pending_ticket_state(state)
 
     thread_uuid = state.get("zep_thread_uuid")
     if thread_uuid:
@@ -1035,16 +1245,29 @@ def _start_ticket_collection(
         or state.get("customer_email")
     )
     state["pending_ticket"] = {
+        **existing_pending,
         "customer_email": collected_email,
         "original_complaint": complaint,
-        "additional_details": "",
-        "detail_messages": [],
+        "additional_details": existing_pending.get("additional_details", ""),
+        "detail_messages": existing_pending.get("detail_messages", []),
         "issue_summary": complaint or "",
         "intent": intent,
         "intervention": intervention,
         "intervention_confidence": intervention_confidence,
+        "human_support_requested": bool(existing_pending.get("human_support_requested")),
         "step": "additional_details",
+        "custom_fields": existing_pending.get("custom_fields", {}),
     }
+    # Collect company-configured required contact fields at the beginning
+    # of ticket intake, before asking the customer to describe the issue.
+    first_global_field = _next_missing_global_ticket_field(
+        state["pending_ticket"], state.get("company_id")
+    )
+    if first_global_field:
+        state["pending_ticket"]["intake_stage"] = "initial_contact"
+        return _ask_for_ticket_field(
+            state, history, user_message, state["pending_ticket"], first_global_field
+        )
     return _save_and_return(
         state,
         history,
@@ -1085,7 +1308,7 @@ def _check_duplicate_ticket(
 
 
 
-def _ticket_additional_details_for_storage(pending_ticket):
+def _ticket_additional_details_for_storage(pending_ticket, company_id=None):
     """Combine raw customer details and the confirmed issue summary."""
     sections = []
 
@@ -1102,14 +1325,159 @@ def _ticket_additional_details_for_storage(pending_ticket):
             "Confirmed issue summary:\n" + summary
         )
 
+    custom_fields = _ticket_custom_fields_for_storage(
+        pending_ticket, company_id
+    )
+    if custom_fields:
+        sections.append(
+            "Configured customer information:\n" +
+            "\n".join(f"{key}: {value}" for key, value in custom_fields.items())
+        )
+
     return "\n\n".join(sections)
+
+
+def _get_ticket_intake_fields(company_id, intent):
+    db = SessionLocal()
+    try:
+        row = db.query(TicketIntakeConfiguration).filter(TicketIntakeConfiguration.company_id == company_id).first()
+        if not row:
+            return [{"key": "email", "label": "Email address", "type": "email", "required": True, "prompt": "What email address should our support team use to send you updates?"}]
+        config = row.configuration if isinstance(row.configuration, dict) else {}
+        fields = list(config.get("global_fields") or [])
+        # Repair configurations saved by the earlier builder where an admin
+        # changed Email to Phone but the field key remained "email".
+        for field in fields:
+            if field.get("key") == "email" and field.get("type") == "phone":
+                field["key"] = "phone"
+                field["required"] = True
+                if "email address" in str(field.get("prompt") or "").lower():
+                    field["prompt"] = "What phone number can our support team use to contact you?"
+        category_name = get_ticket_category(intent or "").strip().lower()
+        intent_key = re.sub(r"[^a-z0-9]+", "_", str(intent or "").lower()).strip("_")
+        normalized_category = re.sub(r"[^a-z0-9]+", " ", category_name).strip()
+        category_aliases = {
+            "delivery shipping": {"order", "orders", "order issue", "order status", "delivery", "shipping"},
+            "payment billing": {"payment", "payments", "billing"},
+            "refunds returns": {"refund", "refunds", "return", "returns"},
+            "login authentication": {"login", "authentication", "account access"},
+            "technical issues": {"technical", "technical issue", "bug report"},
+            "account management": {"account", "profile"},
+        }
+        for category in config.get("categories") or []:
+            key = str(category.get("key") or "").lower()
+            label = re.sub(r"[^a-z0-9]+", " ", str(category.get("label") or "").lower()).strip()
+            alias_match = label in category_aliases.get(normalized_category, set())
+            if key == intent_key or (label and (label == normalized_category or alias_match)):
+                category_fields = list(category.get("fields") or [])
+                for field in category_fields:
+                    if field.get("key") == "email" and field.get("type") == "phone":
+                        field["key"] = "phone"
+                        field["required"] = True
+                        if "email address" in str(field.get("prompt") or "").lower():
+                            field["prompt"] = "What phone number can our support team use to contact you?"
+                fields.extend(category_fields)
+                break
+        return fields
+    finally:
+        db.close()
+
+
+def _next_missing_global_ticket_field(pending_ticket, company_id):
+    db = SessionLocal()
+    try:
+        row = db.query(TicketIntakeConfiguration).filter(
+            TicketIntakeConfiguration.company_id == company_id
+        ).first()
+        if not row:
+            global_fields = [{
+                "key": "email", "label": "Email address", "type": "email",
+                "required": True,
+                "prompt": "What email address should our support team use to send you updates?",
+            }]
+        else:
+            config = row.configuration if isinstance(row.configuration, dict) else {}
+            global_fields = list(config.get("global_fields") or [])
+            for field in global_fields:
+                if field.get("key") == "email" and field.get("type") == "phone":
+                    # Legacy builder saved a phone input under the email key
+                    # and often left it optional. Treat this conversion as a
+                    # required contact field so ticket intake cannot skip it.
+                    field["key"] = "phone"
+                    field["required"] = True
+                    if "email address" in str(field.get("prompt") or "").lower():
+                        field["prompt"] = "What phone number can our support team use to contact you?"
+        values = pending_ticket.setdefault("custom_fields", {})
+        skipped = set(pending_ticket.get("skipped_intake_fields") or [])
+        for field in global_fields:
+            key = field.get("key")
+            if key in skipped or not field.get("required", False):
+                continue
+            value = pending_ticket.get("customer_email") if (key == "email" or field.get("type") == "email") else values.get(key)
+            if value is None or not str(value).strip():
+                return field
+        return None
+    finally:
+        db.close()
+
+
+def _ticket_email_required(company_id, intent):
+    return any(
+        (field.get("key") == "email" or field.get("type") == "email") and field.get("required", False)
+        for field in _get_ticket_intake_fields(company_id, intent)
+    )
+
+
+def _next_missing_ticket_field(pending_ticket, company_id, include_optional=False):
+    values = pending_ticket.setdefault("custom_fields", {})
+    skipped = set(pending_ticket.get("skipped_intake_fields") or [])
+    for field in _get_ticket_intake_fields(company_id, pending_ticket.get("intent")):
+        key = field.get("key")
+        if key in skipped:
+            continue
+        if not field.get("required", False) and not include_optional:
+            continue
+        value = pending_ticket.get("customer_email") if (key == "email" or field.get("type") == "email") else values.get(key)
+        if value is None or not str(value).strip():
+            return field
+    return None
+
+
+def _ticket_custom_fields_for_storage(pending_ticket, company_id):
+    values = pending_ticket.get("custom_fields") or {}
+    labels = {}
+    for field in _get_ticket_intake_fields(company_id, pending_ticket.get("intent")):
+        key = field.get("key")
+        if key in values and key != "email" and field.get("type") != "email":
+            labels[field.get("label") or key] = values[key]
+    # Retain any values from older or removed field definitions.
+    for key, value in values.items():
+        if key not in {
+            field.get("key") for field in _get_ticket_intake_fields(company_id, pending_ticket.get("intent"))
+        }:
+            labels[key] = value
+    return labels
+
+
+def _ask_for_ticket_field(state, history, user_message, pending_ticket, field):
+    pending_ticket["step"] = "collecting_custom_fields"
+    pending_ticket["current_intake_field"] = field.get("key")
+    question = (field.get("prompt") or "").strip() or f"Could you provide your {field.get('label', 'requested information')}?"
+    return _save_and_return(state, history, user_message, question, ticket_created=False, awaiting_custom_field=True, required_field=field.get("key"), conversation_status="collecting_ticket_information")
 
 
 def _finish_ticket_creation(state, history, user_message, session_id, pending_ticket):
     """Check for duplicates and create the ticket when appropriate."""
-    email = pending_ticket["customer_email"]
+    email = pending_ticket.get("customer_email")
+    missing_field = _next_missing_ticket_field(pending_ticket, state.get("company_id"), include_optional=not state.get("_timeout_submission"))
+    if missing_field:
+        return _ask_for_ticket_field(state, history, user_message, pending_ticket, missing_field)
 
-    if not pending_ticket.get("force_new_ticket"):
+    if (
+        email
+        and not pending_ticket.get("force_new_ticket")
+        and not pending_ticket.get("skip_duplicate_check")
+    ):
         try:
             duplicate = _check_duplicate_ticket(
                 pending_ticket,
@@ -1152,8 +1520,9 @@ def _finish_ticket_creation(state, history, user_message, session_id, pending_ti
     try:
         ticket_id = create_support_ticket(
             customer_message=pending_ticket["original_complaint"],
-            additional_details=_ticket_additional_details_for_storage(pending_ticket),
+            additional_details=_ticket_additional_details_for_storage(pending_ticket, state.get("company_id")),
             customer_email=email,
+            custom_fields=_ticket_custom_fields_for_storage(pending_ticket, state.get("company_id")),
             intent=pending_ticket["intent"],
             session_id=session_id,
             company_id=state.get("company_id"),
@@ -1183,6 +1552,10 @@ def _finish_ticket_creation(state, history, user_message, session_id, pending_ti
     state.pop("pending_ticket", None)
     state.pop("duplicate_confirmation", None)
     state.pop("issue_messages", None)
+    state.pop("last_customer_complaint", None)
+    state.pop("last_customer_intent", None)
+    state.pop("last_intervention", None)
+    state.pop("last_intervention_confidence", None)
     state.pop("human_escalation_count", None)
     state.pop("human_escalation_triggered", None)
     state.pop("human_support_issue_pending", None)
@@ -1202,7 +1575,6 @@ def _finish_ticket_creation(state, history, user_message, session_id, pending_ti
         reply = (
             "Your first support ticket has been created successfully.\n\n"
             f"Ticket ID: {ticket_id}\n"
-            f"Registered email: {email}\n\n"
             "Now let's work on your separate issue. Please share any details "
             "that will help our support team."
         )
@@ -1211,9 +1583,11 @@ def _finish_ticket_creation(state, history, user_message, session_id, pending_ti
         reply = (
             "Thank you! Your support ticket has been successfully created.\n\n"
             f"Ticket ID: {ticket_id}\n"
-            f"Registered email: {email}\n\n"
-            "Our human support team will review your complaint "
-            "and send updates to your email address."
+            + (
+                f"Updates will be sent to {email}."
+                if email else
+                "The support team will use the contact information you provided."
+            )
         )
         conversation_status = "ticket_created"
 
@@ -1234,6 +1608,61 @@ def _finish_ticket_creation(state, history, user_message, session_id, pending_ti
 # ------------------------------------------------
 # CHAT ENDPOINT
 # ------------------------------------------------
+
+@app.get("/chat/resume")
+def resume_ticket_conversation(session_id: str, bot_public_id: str):
+    """Return only a still-pending ticket conversation for widget restoration."""
+    db = SessionLocal()
+    try:
+        from database.models import Chatbot
+        chatbot = db.query(Chatbot).filter(
+            Chatbot.public_id == bot_public_id,
+            Chatbot.status == "active",
+        ).first()
+        if not chatbot:
+            return {"messages": []}
+        pending = db.query(PendingTicketConversation).filter(
+            PendingTicketConversation.company_id == chatbot.organization_id,
+            PendingTicketConversation.chatbot_id == chatbot.id,
+            PendingTicketConversation.session_id == session_id,
+            PendingTicketConversation.status.in_(["active", "awaiting_confirmation"]),
+        ).first()
+        if pending and isinstance(pending.state_data, dict):
+            history = pending.state_data.get("history") or []
+            messages = [
+                {
+                    "sender": "user" if item.get("role") == "user" else "bot",
+                    "text": item.get("content", ""),
+                }
+                for item in history
+                if item.get("role") in {"user", "assistant"} and item.get("content")
+            ]
+            return {"messages": messages}
+
+        # If inactivity already submitted the ticket, restore the saved
+        # ticket-raising transcript including the generated ticket number.
+        conversation = db.query(Conversation).filter(
+            Conversation.company_id == chatbot.organization_id,
+            Conversation.chatbot_id == chatbot.id,
+            Conversation.session_id == session_id,
+        ).order_by(Conversation.last_activity.desc()).first()
+        if not conversation:
+            return {"messages": []}
+        saved_messages = db.query(ConversationMessage).filter(
+            ConversationMessage.conversation_id == conversation.id
+        ).order_by(ConversationMessage.timestamp.asc()).all()
+        return {
+            "messages": [
+                {
+                    "sender": "user" if item.sender == "customer" else "bot",
+                    "text": item.content,
+                }
+                for item in saved_messages
+            ]
+        }
+    finally:
+        db.close()
+
 
 @app.post("/chat")
 def chat(data: dict):
@@ -1298,7 +1727,38 @@ def chat(data: dict):
         else session_id
     )
 
+    # Reset inactivity as soon as a customer message reaches the backend,
+    # before semantic/LLM processing begins.
+    activity_db = SessionLocal()
+    try:
+        activity_row = activity_db.query(PendingTicketConversation).filter(
+            PendingTicketConversation.company_id == company_id,
+            PendingTicketConversation.chatbot_id == chatbot_id,
+            PendingTicketConversation.session_id == session_id,
+            PendingTicketConversation.status.in_(["active", "awaiting_confirmation"]),
+        ).first()
+        if activity_row:
+            activity_row.last_activity = datetime.now(timezone.utc)
+            activity_row.status = "active"
+            activity_db.commit()
+    finally:
+        activity_db.close()
+
     state = conversation_states.setdefault(state_key, {})
+    # Restore the in-progress ticket workflow from PostgreSQL. This also
+    # restores its transcript when the customer reloads the widget.
+    restore_db = SessionLocal()
+    try:
+        saved = restore_db.query(PendingTicketConversation).filter(
+            PendingTicketConversation.company_id == company_id,
+            PendingTicketConversation.chatbot_id == chatbot_id,
+            PendingTicketConversation.session_id == session_id,
+            PendingTicketConversation.status.in_(["active", "awaiting_confirmation"]),
+        ).first()
+        if saved and isinstance(saved.state_data, dict):
+            state.update(saved.state_data)
+    finally:
+        restore_db.close()
     print("CHAT STATE TRACE:", state_key, "pending:", (state.get("pending_ticket") or {}).get("step"), "state_id:", id(state))
     history = state.setdefault("history", [])
 
@@ -1646,6 +2106,512 @@ def chat(data: dict):
     pending_ticket = state.get("pending_ticket")
     current_step = (pending_ticket or {}).get("step", "additional_details")
 
+    # An explicit instruction to submit the pending ticket now is a
+    # submission decision, not another request for the same issue details.
+    # If no issue was supplied, create a clearly labelled human-follow-up
+    # ticket rather than inventing a complaint or looping indefinitely.
+    if (
+        pending_ticket
+        and pending_ticket.get("human_support_requested")
+        and is_explicit_immediate_ticket_request(user_message)
+        and current_step in {
+            "customer_email",
+            "human_support_issue_details",
+            "additional_details",
+            "awaiting_summary_confirmation",
+        }
+    ):
+        email = pending_ticket.get("customer_email") or state.get("customer_email")
+        if _ticket_email_required(state.get("company_id"), pending_ticket.get("intent")) and (not email or not valid_email(email)):
+            pending_ticket["step"] = "customer_email"
+            return _save_and_return(
+                state, history, user_message,
+                "Absolutely. I can submit the human-support ticket now. "
+                "Please provide your email address so the team can contact you.",
+                ticket_created=False,
+                awaiting_email=True,
+                conversation_status="collecting_customer_email",
+            )
+
+        pending_ticket["customer_email"] = email
+        state["customer_email"] = email
+        complaint = (
+            pending_ticket.get("issue_summary")
+            or pending_ticket.get("original_complaint")
+            or ""
+        ).strip()
+
+        if not complaint:
+            complaint = (
+                "Customer explicitly requested immediate human support "
+                "but did not provide issue details."
+            )
+            pending_ticket["original_complaint"] = complaint
+            pending_ticket["issue_summary"] = complaint
+            pending_ticket["additional_details"] = (
+                "The customer repeatedly requested to speak with a human "
+                "and explicitly instructed the chatbot to raise a ticket "
+                "immediately. No underlying problem details were provided. "
+                "Please contact the customer to identify the issue."
+            )
+            pending_ticket["skip_duplicate_check"] = True
+            pending_ticket["intent"] = pending_ticket.get("intent") or "general_enquiry"
+            pending_ticket["intervention"] = "HUMAN_ONLY"
+            pending_ticket["intervention_confidence"] = 1.0
+
+        pending_ticket["human_support_requested"] = True
+        pending_ticket["summary_confirmed"] = True
+        return _finish_ticket_creation(
+            state, history, user_message, session_id, pending_ticket
+        )
+
+    # --------------------------------------------
+    # C. Confirm the issue summary
+    # --------------------------------------------
+
+
+    if pending_ticket and current_step == "collecting_custom_fields":
+        field_key = pending_ticket.get("current_intake_field")
+        field = next((item for item in _get_ticket_intake_fields(state.get("company_id"), pending_ticket.get("intent")) if item.get("key") == field_key), None)
+        if not field:
+            pending_ticket.pop("current_intake_field", None)
+            pending_ticket["step"] = "additional_details"
+            return _finish_ticket_creation(state, history, user_message, session_id, pending_ticket)
+        value = user_message.strip()
+        is_contact_email_field = (
+            field.get("type") == "email" or field_key == "email"
+        )
+        if is_contact_email_field and not valid_email(value):
+            normalized_value = re.sub(r"\s+", " ", value.lower()).strip()
+            looks_like_question = (
+                "?" in value
+                or bool(re.match(
+                    r"^(?:do|does|did|can|could|would|what|which|who|where|when|why|how|is|are|am|tell me|show me)\b",
+                    normalized_value,
+                ))
+            )
+            is_side_question = (
+                semantic_category in {"SMALL_TALK", "GENERAL_QUESTION", "PRODUCT_ENQUIRY"}
+                or looks_like_question
+            )
+            is_issue_description = (
+                semantic_category in {"CUSTOMER_ISSUE", "FOLLOW_UP_ISSUE"}
+                or bool(re.search(
+                    r"\b(not delivered|not shipped|not dispatched|not received|"
+                    r"payment|refund|damaged|broken|not working|order problem|"
+                    r"delivery problem|issue with my|problem with my)\b",
+                    normalized_value,
+                ))
+            )
+            if is_side_question:
+                side_intent = (
+                    "business_enquiry"
+                    if semantic_category == "PRODUCT_ENQUIRY"
+                    else "general_enquiry"
+                )
+                try:
+                    side_reply = generate_llm_response(
+                        customer_message=user_message,
+                        intent=side_intent,
+                        conversation_history=history,
+                        company_id=state.get("company_id"),
+                    )
+                    side_reply = (side_reply or "").strip()
+                    if not side_reply:
+                        raise ValueError("Empty side-question response")
+                except Exception as exc:
+                    print(f"Initial-contact side-question response failed: {exc}")
+                    side_reply = "I can help with that question. "
+                question = (field.get("prompt") or "").strip() or (
+                    f"Could you provide your {field.get('label', 'contact information')}?"
+                )
+                return _save_and_return(
+                    state, history, user_message,
+                    side_reply + "\n\nWhen you're ready, " + question[0].lower() + question[1:],
+                    ticket_created=False,
+                    awaiting_custom_field=True,
+                    required_field=field_key,
+                    conversation_status="collecting_ticket_information",
+                    response_source="side_question_during_initial_contact",
+                )
+            if is_issue_description:
+                generic_issue = normalized_value in {
+                    "i have some issue", "i have somme issue", "i have an issue",
+                    "i have a problem", "i have some problem", "some issue",
+                    "some problem", "an issue", "a problem",
+                }
+                if not generic_issue:
+                    if not pending_ticket.get("original_complaint"):
+                        pending_ticket["original_complaint"] = value
+                        pending_ticket["issue_summary"] = value
+                    else:
+                        pending_ticket.setdefault("detail_messages", []).append(value)
+                        pending_ticket["additional_details"] = "\n".join(
+                            pending_ticket["detail_messages"]
+                        )
+                question = (field.get("prompt") or "").strip() or (
+                    f"Could you provide your {field.get('label', 'contact information')}?"
+                )
+                return _save_and_return(
+                    state, history, user_message, question,
+                    ticket_created=False,
+                    awaiting_custom_field=True,
+                    required_field=field_key,
+                    conversation_status="collecting_ticket_information",
+                    response_source="required_field_first_intake",
+                )
+        if value.lower() in {"skip", "skip this", "prefer not to say", "rather not say"}:
+            if field.get("required", False):
+                return _save_and_return(state, history, user_message, f"{field.get('label', 'This information')} is required to submit the ticket. Could you provide it?", ticket_created=False, awaiting_custom_field=True, conversation_status="collecting_ticket_information")
+            pending_ticket.setdefault("skipped_intake_fields", []).append(field_key)
+            pending_ticket.pop("current_intake_field", None)
+            pending_ticket["step"] = "additional_details"
+            return _finish_ticket_creation(state, history, user_message, session_id, pending_ticket)
+        field_type = field.get("type", "text")
+        if field_type == "email" or field_key == "email":
+            if not valid_email(value):
+                return _save_and_return(state, history, user_message, "That doesn't look like a valid email address. Could you check it and send it again?", ticket_created=False, awaiting_custom_field=True, conversation_status="collecting_ticket_information")
+            pending_ticket["customer_email"] = value
+            state["customer_email"] = value
+        elif field_type == "phone":
+            digits = re.sub(r"\D", "", value)
+            if len(digits) < 7 or len(digits) > 15:
+                return _save_and_return(state, history, user_message, "Could you check that phone number and send it again, including the country code if needed?", ticket_created=False, awaiting_custom_field=True, conversation_status="collecting_ticket_information")
+            pending_ticket.setdefault("custom_fields", {})[field_key] = value
+        elif field_type == "select":
+            options = [str(option).strip().lower() for option in field.get("options", [])]
+            if value.lower() not in options:
+                return _save_and_return(state, history, user_message, "Please choose one of these options: " + ", ".join(str(option) for option in field.get("options", [])), ticket_created=False, awaiting_custom_field=True, conversation_status="collecting_ticket_information")
+            pending_ticket.setdefault("custom_fields", {})[field_key] = value
+        else:
+            pending_ticket.setdefault("custom_fields", {})[field_key] = value
+        pending_ticket.pop("current_intake_field", None)
+        if pending_ticket.get("intake_stage") == "initial_contact":
+            next_global_field = _next_missing_global_ticket_field(
+                pending_ticket, state.get("company_id")
+            )
+            if next_global_field:
+                return _ask_for_ticket_field(
+                    state, history, user_message, pending_ticket, next_global_field
+                )
+            pending_ticket.pop("intake_stage", None)
+            pending_ticket["step"] = "additional_details"
+            initial_complaint = (
+                pending_ticket.get("original_complaint") or ""
+            ).strip()
+            if initial_complaint:
+                domain_result = _check_company_domain(
+                    initial_complaint, history, state.get("company_id")
+                )
+                domain_decision = domain_result.get("decision", "UNCERTAIN")
+                print("INITIAL-CONTACT COMPLAINT DOMAIN DECISION:", domain_decision)
+                if domain_decision == "OUT_OF_DOMAIN":
+                    state.pop("pending_ticket", None)
+                    return _save_and_return(
+                        state, history, user_message, _domain_rejection_message(),
+                        ticket_created=False,
+                        conversation_status="out_of_domain",
+                        response_source="company_domain_validation",
+                    )
+                try:
+                    intent_result, intervention_result = _classify_issue(
+                        initial_complaint
+                    )
+                except Exception as exc:
+                    print(f"Initial-contact complaint classification failed: {exc}")
+                    return _save_and_return(
+                        state, history, user_message,
+                        "I couldn't assess the issue just now. Could you describe it once more?",
+                        ticket_created=False,
+                        conversation_status="complaint_validation_error",
+                    )
+                state["last_customer_complaint"] = initial_complaint
+                state["last_customer_intent"] = intent_result["intent"]
+                state["last_intervention"] = intervention_result["intervention"]
+                state["last_intervention_confidence"] = intervention_result["confidence"]
+                return _start_ticket_collection(
+                    state, history, user_message, initial_complaint,
+                    intent_result["intent"], intervention_result["intervention"],
+                    intervention_result["confidence"],
+                    _first_investigation_question(initial_complaint),
+                )
+            pending_ticket["step"] = "human_support_issue_details"
+            return _save_and_return(
+                state, history, user_message,
+                "Thanks. What happened with the product, order, or service?",
+                ticket_created=False,
+                awaiting_issue_details=True,
+                conversation_status="collecting_support_issue",
+                response_source="ticket_information_collection",
+            )
+        pending_ticket["step"] = "additional_details"
+        return _finish_ticket_creation(state, history, user_message, session_id, pending_ticket)
+
+    if current_step == "awaiting_summary_confirmation":
+        choice = user_message.strip().lower()
+        choice = choice.strip(" .,!")
+
+        positive_choices = {
+            "yes", "y", "yes confirm", "confirm",
+            "correct", "looks good", "that's correct",
+            "that is correct", "accurate",
+        }
+
+        negative_choices = {
+            "no", "n", "nope", "incorrect",
+            "not correct", "make corrections",
+            "needs correction",
+        }
+
+        if choice in positive_choices:
+            pending_ticket["summary_confirmed"] = True
+
+            # Use the complete, customer-confirmed issue summary
+            complaint = (
+                pending_ticket.get("issue_summary")
+                or pending_ticket.get("original_complaint")
+                or ""
+            ).strip()
+
+            intent = pending_ticket.get("intent")
+            intervention = pending_ticket.get("intervention")
+            intervention_confidence = pending_ticket.get(
+                "intervention_confidence"
+            )
+
+            # Honour an explicit human handoff instead of diverting
+            # the customer into an automated historical-solution suggestion.
+            approved_match = None
+            if not pending_ticket.get("human_support_requested"):
+                try:
+                    from services.mcp_client_service import (
+                        search_solved_tickets_via_mcp,
+                    )
+
+                    approved_match = search_solved_tickets_via_mcp(
+                        user_message=complaint,
+                        intent=intent,
+                        company_id=state.get("company_id"),
+                        chatbot_id=state.get("chatbot_id"),
+                    )
+
+                    if approved_match and not approved_match.get("found"):
+                        approved_match = None
+
+                except Exception as exc:
+                    print(f"MCP approved solution retrieval failed: {exc}")
+                    approved_match = None
+            # If a suitable solution exists, offer it naturally
+            if approved_match:
+
+                reply = (
+                    "Thanks for clarifying. You can try this:\n\n"
+                    f"{approved_match['solution']}\n\n"
+                    "Did this resolve the issue? Reply YES or NO."
+                )
+
+                # Create a permanent record of this retrieval attempt.
+                attempt_id = _create_historical_solution_attempt(
+                    state=state,
+                    complaint=complaint,
+                    matched_ticket=approved_match,
+                    response_delivered=reply,
+                )
+
+                state["awaiting_resolution_feedback"] = {
+                    "complaint": complaint,
+                    "intent": intent,
+                    "intervention": intervention,
+                    "intervention_confidence": intervention_confidence,
+                    "matched_ticket": approved_match,
+                    "historical_attempt_id": attempt_id,
+                }
+
+                state.pop("pending_ticket", None)
+
+                return _save_and_return(
+                    state,
+                    history,
+                    user_message,
+                    reply,
+                    ticket_created=False,
+                    awaiting_resolution_feedback=True,
+                    conversation_status="awaiting_resolution_feedback",
+                )               
+
+            # Reuse the email collected before complaint validation.
+            saved_email = (
+                pending_ticket.get("customer_email")
+                or state.get("customer_email")
+            )
+            if saved_email and valid_email(saved_email):
+                pending_ticket["customer_email"] = saved_email
+                return _finish_ticket_creation(
+                    state, history, user_message, session_id, pending_ticket
+                )
+
+            return _finish_ticket_creation(
+                state, history, user_message, session_id, pending_ticket
+            )
+
+        if choice in negative_choices:
+            pending_ticket.pop("summary_confirmed", None)
+            pending_ticket["step"] = "additional_details"
+
+            reply = (
+                "Of course. Please tell me what needs to be corrected "
+                "or added to the summary."
+            )
+
+            return _save_and_return(
+                state,
+                history,
+                user_message,
+                reply,
+                ticket_created=False,
+                awaiting_additional_details=True,
+                conversation_status="collecting_additional_details",
+            )
+
+        reply = (
+            "Please reply YES to confirm the summary, "
+            "or NO if you would like to correct it."
+        )
+
+        return _save_and_return(
+            state,
+            history,
+            user_message,
+            reply,
+            ticket_created=False,
+            awaiting_summary_confirmation=True,
+            conversation_status="awaiting_summary_confirmation",
+        )
+
+
+
+    # Do not let repeated human-support requests become issue details.
+    # This state is reached only after the customer has supplied an email
+    # but has not yet described the actual problem.
+    if pending_ticket and current_step == "human_support_issue_details":
+        if semantic_human_request:
+            pending_ticket["human_support_requested"] = True
+            state["human_support_issue_pending"] = True
+            escalation_count = int(state.get("human_escalation_count", 0) or 0) + 1
+            state["human_escalation_count"] = escalation_count
+
+            email = pending_ticket.get("customer_email") or state.get("customer_email")
+            if _ticket_email_required(state.get("company_id"), pending_ticket.get("intent")) and (not email or not valid_email(email)):
+                pending_ticket["step"] = "customer_email"
+                state["human_escalation_count"] = min(escalation_count, 2)
+                return _save_and_return(
+                    state, history, user_message,
+                    "Of course. What email address should our support team use to contact you?",
+                    ticket_created=False,
+                    awaiting_email=True,
+                    conversation_status="collecting_customer_email",
+                )
+
+            pending_ticket["customer_email"] = email
+            state["customer_email"] = email
+
+            if escalation_count >= 3:
+                issue = (
+                    pending_ticket.get("issue_summary")
+                    or pending_ticket.get("original_complaint")
+                    or ""
+                ).strip()
+                if not issue:
+                    issue = (
+                        "Customer repeatedly requested human support but did not provide "
+                        "specific issue details. Human support team follow-up is required."
+                    )
+                    pending_ticket["original_complaint"] = issue
+                    pending_ticket["issue_summary"] = issue
+
+                pending_ticket["human_support_requested"] = True
+                pending_ticket["summary_confirmed"] = True
+                pending_ticket["skip_duplicate_check"] = True
+                pending_ticket["intervention"] = "HUMAN_ONLY"
+                pending_ticket["intervention_confidence"] = 1.0
+                pending_ticket["intent"] = pending_ticket.get("intent") or "general_enquiry"
+                return _finish_ticket_creation(
+                    state, history, user_message, session_id, pending_ticket
+                )
+
+            reply = (
+                "Of course. I can arrange that. Could you briefly describe "
+                "what you need help with so the team knows how best to assist?"
+            )
+            return _save_and_return(
+                state, history, user_message, reply,
+                ticket_created=False,
+                awaiting_issue_details=True,
+                conversation_status="collecting_support_issue",
+            )
+
+        if semantic_category not in {"CUSTOMER_ISSUE", "FOLLOW_UP_ISSUE"}:
+            reply = (
+                "I'd be happy to help arrange support. Could you tell me "
+                "a little about the problem you're experiencing?"
+            )
+            return _save_and_return(
+                state, history, user_message, reply,
+                ticket_created=False,
+                awaiting_issue_details=True,
+                conversation_status="collecting_support_issue",
+            )
+
+        complaint = user_message.strip()
+        domain_result = _check_company_domain(
+            complaint, history, state.get("company_id")
+        )
+        domain_decision = domain_result.get("decision", "UNCERTAIN")
+        print("HUMAN SUPPORT ISSUE DOMAIN DECISION:", domain_decision)
+
+        if domain_decision == "OUT_OF_DOMAIN":
+            state.pop("pending_ticket", None)
+            return _save_and_return(
+                state, history, user_message, _domain_rejection_message(),
+                ticket_created=False,
+                conversation_status="out_of_domain",
+                response_source="company_domain_validation",
+            )
+
+        if domain_decision == "UNCERTAIN":
+            return _save_and_return(
+                state, history, user_message,
+                "I can arrange human support. Please explain how this issue relates to this company's products or services.",
+                ticket_created=False,
+                awaiting_issue_details=True,
+                conversation_status="domain_clarification_required",
+            )
+
+        try:
+            intent_result, intervention_result = _classify_issue(complaint)
+        except Exception as exc:
+            print(f"Human-support issue classification failed: {exc}")
+            return _save_and_return(
+                state, history, user_message,
+                "I couldn't assess the issue just now. Please try again.",
+                ticket_created=False,
+                conversation_status="complaint_validation_error",
+            )
+
+        state["last_customer_complaint"] = complaint
+        state["last_customer_intent"] = intent_result["intent"]
+        state["last_intervention"] = intervention_result["intervention"]
+        state["last_intervention_confidence"] = intervention_result["confidence"]
+        pending_ticket["human_support_requested"] = True
+
+        return _start_ticket_collection(
+            state, history, user_message, complaint,
+            intent_result["intent"],
+            intervention_result["intervention"],
+            intervention_result["confidence"],
+            _first_investigation_question(complaint),
+        )
+
     # Email collection is handled by its dedicated handler below. Only
     # active investigation steps should enter the ticket interpretation engine.
     if pending_ticket and current_step != "customer_email":
@@ -1750,57 +2716,88 @@ def chat(data: dict):
             "issue_summary",
             pending_ticket.get("original_complaint") or "",
         )
-        # Keep the explicit human-support request counter internal.
-        # Never expose the count or the escalation rule to the customer.
-        if (
-            current_step == "additional_details"
-            and semantic_human_request
-            and not state.get("human_escalation_triggered")
-        ):
-            escalation_count = int(state.get("human_escalation_count") or 0) + 1
+        # Count explicit requests for a human while gathering ticket details.
+        # The third request triggers ticket creation instead of another loop.
+        if current_step == "additional_details" and semantic_human_request:
+            pending_ticket["human_support_requested"] = True
+            escalation_count = int(state.get("human_escalation_count", 0) or 0) + 1
             state["human_escalation_count"] = escalation_count
+            state["human_support_issue_pending"] = True
 
-            issue_context = " ".join([
-                str(pending_ticket.get("original_complaint") or ""),
-                str(pending_ticket.get("issue_summary") or ""),
-                str(pending_ticket.get("additional_details") or ""),
-            ]).lower()
-
-            if "payment" in issue_context and ("404" in issue_context or "error" in issue_context):
-                follow_up = (
-                    "At which step of the payment process does the 404 error appear?"
-                )
-            else:
-                follow_up = (
-                    "Could you share a little more information about the issue "
-                    "so our support team can assist you properly?"
+            email = pending_ticket.get("customer_email") or state.get("customer_email")
+            if _ticket_email_required(state.get("company_id"), pending_ticket.get("intent")) and (not email or not valid_email(email)):
+                pending_ticket["step"] = "customer_email"
+                state["human_escalation_count"] = min(escalation_count, 2)
+                return _save_and_return(
+                    state, history, user_message,
+                    "I understand you'd like a human agent. Please provide your email address so the support team can contact you.",
+                    ticket_created=False,
+                    awaiting_email=True,
+                    conversation_status="collecting_customer_email",
                 )
 
-            if escalation_count < 3:
-                reply = (
-                    "I can help arrange human support. "
-                    "To make sure the team understands the problem, "
-                    + follow_up
-                )
-            else:
-                # Third explicit request: move into completing the issue details.
-                state["human_escalation_triggered"] = True
+            pending_ticket["customer_email"] = email
+            state["customer_email"] = email
+
+            if escalation_count >= 3:
+                issue = (
+                    pending_ticket.get("issue_summary")
+                    or pending_ticket.get("original_complaint")
+                    or ""
+                ).strip()
+
+                if not issue:
+                    issue = (
+                        "Customer repeatedly requested human support but did not provide specific issue details."
+                    )
+                    pending_ticket["original_complaint"] = issue
+                    pending_ticket["issue_summary"] = issue
+                else:
+                    existing_details = (
+                        pending_ticket.get("additional_details") or ""
+                    ).strip()
+                    handoff_note = (
+                        "Customer repeatedly requested human support and asked "
+                        "to be connected to an agent. Please follow up directly."
+                    )
+                    pending_ticket["additional_details"] = (
+                        existing_details + "\n\n" + handoff_note
+                        if existing_details else handoff_note
+                    )
+
                 pending_ticket["human_support_requested"] = True
-                reply = (
-                    "Certainly. I'll prepare your request for the support team. "
-                    "Before I proceed, I just need one more detail: "
-                    + follow_up
+                pending_ticket["summary_confirmed"] = True
+                pending_ticket["skip_duplicate_check"] = True
+                pending_ticket["intervention"] = "HUMAN_ONLY"
+                pending_ticket["intervention_confidence"] = 1.0
+                pending_ticket["intent"] = (
+                    pending_ticket.get("intent") or "general_enquiry"
                 )
 
+                return _finish_ticket_creation(
+                    state, history, user_message, session_id, pending_ticket
+                )
+
+            # Keep the internal escalation threshold invisible to the customer.
+            # Guide the conversation naturally toward the information the agent needs.
+            if escalation_count == 1:
+                reply = (
+                    "Of course. Could you briefly tell me what's happening? "
+                    "That will help our support team understand how to assist you."
+                )
+            else:
+                reply = (
+                    "Certainly. I can help with that. What problem are you "
+                    "experiencing, and when did it start?"
+                )
             return _save_and_return(
-                state,
-                history,
-                user_message,
-                reply,
+                state, history, user_message, reply,
                 ticket_created=False,
                 awaiting_additional_details=True,
+                human_escalation_count=escalation_count,
                 conversation_status="collecting_additional_details",
             )
+
         # A human was requested before the customer described the issue.
         if (
             not pending_ticket.get("original_complaint")
@@ -1872,6 +2869,101 @@ def chat(data: dict):
                 "clarification_question": interpretation.get("clarification_question"),
             }
         )
+
+        # A customer may resolve an order contradiction by confirming that
+        # no purchase was made. This is a pre-purchase enquiry, not a
+        # delivery complaint: close the pending intake before any summary,
+        # confirmation, or ticket-creation path can run.
+        normalized_clarification = re.sub(
+            r"\s+", " ", user_message.lower()
+        ).strip(" .,!?")
+        denial_prefix = bool(re.search(
+            r"\b(?:i\s+)?(?:haven't|have not|didn't|did not|never)\b",
+            normalized_clarification,
+        ))
+        purchase_terms = {
+            "placed", "place", "made", "make", "ordered", "order",
+            "bought", "buy", "purchased", "purchase",
+        }
+        clarification_words = re.findall(
+            r"[a-z]+", normalized_clarification
+        )
+        # Customers frequently misspell "ordered" (for example,
+        # "oreded"). Treat a close spelling after an explicit negative
+        # as the same correction instead of leaving the old complaint
+        # eligible for timeout submission.
+        from difflib import SequenceMatcher
+        fuzzy_purchase_verb = any(
+            SequenceMatcher(None, word, term).ratio() >= 0.78
+            for word in clarification_words
+            for term in purchase_terms
+        )
+        no_purchase_confirmed = denial_prefix and fuzzy_purchase_verb
+        earlier_order_fulfilment_claim = bool(re.search(
+            r"\b(order|delivery|shipment)\b.{0,120}\b("
+            r"not received|never received|haven't received|have not received|"
+            r"not shipped|hasn't shipped|has not shipped|hasnt shipped|"
+            r"hasn't been shipped|has not been shipped|hasnt been shipped|"
+            r"not dispatched|hasn't dispatched|has not dispatched|hasnt dispatched|"
+            r"hasn't arrived|has not arrived|hasnt arrived|not arrived|still waiting"
+            r")\b|"
+            r"\b(not received|never received|haven't received|have not received|"
+            r"not shipped|hasn't shipped|has not shipped|hasnt shipped|"
+            r"hasn't been shipped|has not been shipped|hasnt been shipped|"
+            r"not dispatched|hasn't dispatched|has not dispatched|hasnt dispatched|"
+            r"hasn't arrived|has not arrived|hasnt arrived|not arrived|still waiting"
+            r").{0,120}\b(order|delivery|shipment)\b",
+            str(pending_ticket.get("original_complaint") or ""),
+            re.IGNORECASE,
+        ))
+        if pending_conflicts and no_purchase_confirmed and earlier_order_fulfilment_claim:
+            print(
+                "CONTRADICTION RESOLVED: customer confirms no order was placed; "
+                "closing delivery ticket intake without creating a ticket."
+            )
+            state.pop("pending_ticket", None)
+            state["issue_messages"] = []
+            state["last_customer_complaint"] = ""
+            state["human_support_issue_pending"] = False
+            state["human_escalation_count"] = 0
+            try:
+                pre_purchase_reply = generate_llm_response(
+                    customer_message=user_message,
+                    intent="business_enquiry",
+                    context=(
+                        "The customer has clarified that they have NOT placed "
+                        "an order. Their earlier delivery complaint is no longer "
+                        "an active ticket request. Treat this as a pre-purchase "
+                        "business/product enquiry. Answer the customer's actual "
+                        "question naturally using the company's General Knowledge "
+                        "Base and configuration. Do not create or mention a ticket. "
+                        "Do not assume which product they want; ask what they are "
+                        "interested in only if that is useful."
+                    ),
+                    conversation_history=history,
+                    company_id=state.get("company_id"),
+                    knowledge_type="general",
+                )
+                pre_purchase_reply = (pre_purchase_reply or "").strip()
+                if not pre_purchase_reply:
+                    raise ValueError("Empty pre-purchase response")
+            except Exception as exc:
+                print(f"Pre-purchase response generation failed: {exc}")
+                pre_purchase_reply = (
+                    "Understood—you haven't placed an order yet, so I won't "
+                    "treat this as a delivery issue or create a support ticket. "
+                    "Are you looking for information about a product before buying?"
+                )
+            return _save_and_return(
+                state,
+                history,
+                user_message,
+                pre_purchase_reply,
+                ticket_created=False,
+                awaiting_additional_details=False,
+                conversation_status="pre_purchase_enquiry",
+                response_source="resolved_order_contradiction",
+            )
 
         # Resolve an outstanding contradiction before normal processing.
         if pending_conflicts:
@@ -2094,6 +3186,41 @@ def chat(data: dict):
             )
 
 
+        # A semantic correction may need clarification even when the model
+        # does not populate a contradiction list. Keep the active ticket state
+        # and ask the clarification instead of treating the message as a new
+        # detail or falling through to generic chat.
+        if (
+            interpretation.get("needs_clarification") is True
+            and action not in {"GREETING", "SIDE_QUESTION", "UNRELATED", "PAUSE", "CANCEL"}
+        ):
+            clarification = (
+                interpretation.get("clarification_question") or ""
+            ).strip()
+            if not clarification:
+                clarification = (
+                    "I want to make sure I understood correctly. "
+                    "Could you clarify which of those details is correct?"
+                )
+
+            detected_conflicts = interpretation.get("contradictions") or [
+                "The latest message may correct or conflict with an earlier detail."
+            ]
+            pending_ticket["pending_contradictions"] = detected_conflicts
+            pending_ticket["pending_correction"] = (
+                interpretation.get("relevant_details") or user_message
+            ).strip()
+
+            return _save_and_return(
+                state,
+                history,
+                user_message,
+                clarification,
+                ticket_created=False,
+                awaiting_additional_details=True,
+                conversation_status="clarifying_contradiction",
+            )
+
         if action == "ADD_DETAIL":
             relevant_detail = (
                 interpretation.get("relevant_details") or ""
@@ -2238,6 +3365,7 @@ def chat(data: dict):
                             ),
                             conversation_history=history,
                             company_id=state.get("company_id"),
+                            knowledge_type="ticket",
                         )
 
                         reply = (reply or "").strip()
@@ -2645,157 +3773,6 @@ def chat(data: dict):
         )
 
     # --------------------------------------------
-    # C. Confirm the issue summary
-    # --------------------------------------------
-
-
-    if current_step == "awaiting_summary_confirmation":
-        choice = user_message.strip().lower()
-        choice = choice.strip(" .,!")
-
-        positive_choices = {
-            "yes", "y", "yes confirm", "confirm",
-            "correct", "looks good", "that's correct",
-            "that is correct", "accurate",
-        }
-
-        negative_choices = {
-            "no", "n", "nope", "incorrect",
-            "not correct", "make corrections",
-            "needs correction",
-        }
-
-        if choice in positive_choices:
-
-            # Use the complete, customer-confirmed issue summary
-            complaint = (
-                pending_ticket.get("issue_summary")
-                or pending_ticket.get("original_complaint")
-                or ""
-            ).strip()
-
-            intent = pending_ticket.get("intent")
-            intervention = pending_ticket.get("intervention")
-            intervention_confidence = pending_ticket.get(
-                "intervention_confidence"
-            )
-
-            # Search approved resolutions through MCP after the
-            # customer confirms the complete issue summary.
-            try:
-                from services.mcp_client_service import (
-                    search_solved_tickets_via_mcp,
-                )
-
-                approved_match = search_solved_tickets_via_mcp(
-                    user_message=complaint,
-                    intent=intent,
-                    company_id=state.get("company_id"),
-                    chatbot_id=state.get("chatbot_id"),
-                )
-
-                if approved_match and not approved_match.get("found"):
-                    approved_match = None
-
-            except Exception as exc:
-                print(f"MCP approved solution retrieval failed: {exc}")
-                approved_match = None 
-            # If a suitable solution exists, offer it naturally
-            if approved_match:
-
-                reply = (
-                    "Thanks for clarifying. You can try this:\n\n"
-                    f"{approved_match['solution']}\n\n"
-                    "Did this resolve the issue? Reply YES or NO."
-                )
-
-                # Create a permanent record of this retrieval attempt.
-                attempt_id = _create_historical_solution_attempt(
-                    state=state,
-                    complaint=complaint,
-                    matched_ticket=approved_match,
-                    response_delivered=reply,
-                )
-
-                state["awaiting_resolution_feedback"] = {
-                    "complaint": complaint,
-                    "intent": intent,
-                    "intervention": intervention,
-                    "intervention_confidence": intervention_confidence,
-                    "matched_ticket": approved_match,
-                    "historical_attempt_id": attempt_id,
-                }
-
-                state.pop("pending_ticket", None)
-
-                return _save_and_return(
-                    state,
-                    history,
-                    user_message,
-                    reply,
-                    ticket_created=False,
-                    awaiting_resolution_feedback=True,
-                    conversation_status="awaiting_resolution_feedback",
-                )               
-
-            # Reuse the email collected before complaint validation.
-            saved_email = (
-                pending_ticket.get("customer_email")
-                or state.get("customer_email")
-            )
-            if saved_email and valid_email(saved_email):
-                pending_ticket["customer_email"] = saved_email
-                return _finish_ticket_creation(
-                    state, history, user_message, session_id, pending_ticket
-                )
-
-            pending_ticket["step"] = "customer_email"
-            reply = (
-                "Thank you for confirming the summary. "
-                "Please provide your email address so our support "
-                "team can send you ticket updates."
-            )
-            return _save_and_return(
-                state, history, user_message, reply,
-                ticket_created=False,
-                awaiting_email=True,
-                conversation_status="collecting_customer_email",
-            )
-
-        if choice in negative_choices:
-            pending_ticket["step"] = "additional_details"
-
-            reply = (
-                "Of course. Please tell me what needs to be corrected "
-                "or added to the summary."
-            )
-
-            return _save_and_return(
-                state,
-                history,
-                user_message,
-                reply,
-                ticket_created=False,
-                awaiting_additional_details=True,
-                conversation_status="collecting_additional_details",
-            )
-
-        reply = (
-            "Please reply YES to confirm the summary, "
-            "or NO if you would like to correct it."
-        )
-
-        return _save_and_return(
-            state,
-            history,
-            user_message,
-            reply,
-            ticket_created=False,
-            awaiting_summary_confirmation=True,
-            conversation_status="awaiting_summary_confirmation",
-        )
-
-    # --------------------------------------------
     # C. Paused ticket
     # --------------------------------------------
 
@@ -2851,101 +3828,6 @@ def chat(data: dict):
         )
     
     # --------------------------------------------
-    # Collect issue details for human-support ticket
-    # --------------------------------------------
-
-    if current_step == "human_support_issue_details":
-
-        if semantic_human_request:
-            escalation_count = int(state.get("human_escalation_count") or 0) + 1
-            state["human_escalation_count"] = escalation_count
-
-            if escalation_count < 3:
-                reply = (
-                    "I understand that you want human support. "
-                    "Please describe the issue briefly if you can. "
-                    "I'll ask for your email when you're ready to proceed."
-                )
-                return _save_and_return(
-                    state, history, user_message, reply,
-                    ticket_created=False,
-                    human_escalation_count=escalation_count,
-                    conversation_status="collecting_support_issue",
-                )
-
-            # A human-support request alone is not a complaint.
-            pending_ticket["original_complaint"] = ""
-            pending_ticket["issue_summary"] = ""
-            pending_ticket["step"] = "collecting_support_issue"
-            state["human_escalation_triggered"] = False
-
-            reply = (
-                "I can connect you with human support. "
-                "Please describe the actual problem you're experiencing first."
-            )
-            return _save_and_return(
-                state, history, user_message, reply,
-                ticket_created=False,
-                awaiting_issue_details=True,
-                conversation_status="collecting_support_issue",
-            )
-
-        if semantic_category not in {"CUSTOMER_ISSUE", "FOLLOW_UP_ISSUE"}:
-            reply = (
-                "I understand that you want human support. "
-                "You can repeat your request to proceed without describing "
-                "the issue, or describe the problem if you prefer."
-            )
-            return _save_and_return(
-                state, history, user_message, reply,
-                ticket_created=False,
-                human_escalation_count=state.get("human_escalation_count", 0),
-                conversation_status="collecting_support_issue",
-            )
-
-        complaint = user_message.strip()
-
-        pending_ticket["original_complaint"] = complaint
-        pending_ticket["issue_summary"] = complaint
-        pending_ticket["step"] = "customer_email"
-
-        state["last_customer_complaint"] = complaint
-        state["human_escalation_triggered"] = True
-
-        email = (
-            pending_ticket.get("customer_email")
-            or state.get("customer_email")
-        )
-
-        if email and valid_email(email):
-            pending_ticket["customer_email"] = email
-
-            return _finish_ticket_creation(
-                state,
-                history,
-                user_message,
-                session_id,
-                pending_ticket,
-            )
-
-        reply = (
-            "Thank you for explaining the issue. I've included "
-            "it in your support request. Please provide your "
-            "email address so our support team can contact you."
-        )
-
-        return _save_and_return(
-            state,
-            history,
-            user_message,
-            reply,
-            ticket_created=False,
-            awaiting_customer_email=True,
-            conversation_status="collecting_customer_email",
-        )
-
-
-    # --------------------------------------------
     # D. Collect customer email after confirmation
     # --------------------------------------------
 
@@ -2956,6 +3838,11 @@ def chat(data: dict):
             pending_ticket["customer_email"] = email
             state["customer_email"] = email
 
+            if pending_ticket.get("summary_confirmed"):
+                return _finish_ticket_creation(
+                    state, history, user_message, session_id, pending_ticket
+                )
+
             complaint = (
                 pending_ticket.get("original_complaint")
                 or pending_ticket.get("issue_summary")
@@ -2963,12 +3850,14 @@ def chat(data: dict):
             ).strip()
 
             if not complaint:
-                state.pop("pending_ticket", None)
+                pending_ticket["step"] = "human_support_issue_details"
+                pending_ticket["human_support_requested"] = True
                 return _save_and_return(
                     state, history, user_message,
-                    "Please describe the issue you're experiencing first.",
+                    "Thank you. Now please describe the actual problem you're experiencing so I can prepare an accurate request for the support team.",
                     ticket_created=False,
-                    conversation_status="collecting_complaint",
+                    awaiting_issue_details=True,
+                    conversation_status="collecting_support_issue",
                 )
 
             domain_result = _check_company_domain(
@@ -3022,6 +3911,80 @@ def chat(data: dict):
                 state, history, user_message, complaint,
                 intent, intervention, confidence,
                 _first_investigation_question(complaint),
+            )
+
+        normalized_email_turn = re.sub(
+            r"\s+", " ", user_message.lower()
+        ).strip()
+        looks_like_question = (
+            "?" in user_message
+            or bool(re.match(
+                r"^(?:do|does|did|can|could|would|what|which|who|where|when|why|how|is|are|am|tell me|show me)\b",
+                normalized_email_turn,
+            ))
+        )
+        is_side_question = (
+            semantic_category in {"SMALL_TALK", "GENERAL_QUESTION", "PRODUCT_ENQUIRY"}
+            or looks_like_question
+        )
+        is_issue_description = (
+            semantic_category in {"CUSTOMER_ISSUE", "FOLLOW_UP_ISSUE"}
+            or bool(re.search(
+                r"\b(not delivered|not shipped|not dispatched|not received|"
+                r"payment|refund|damaged|broken|not working|order problem|"
+                r"delivery problem|issue with my|problem with my)\b",
+                normalized_email_turn,
+            ))
+        )
+        if is_side_question:
+            side_intent = (
+                "business_enquiry"
+                if semantic_category == "PRODUCT_ENQUIRY"
+                else "general_enquiry"
+            )
+            try:
+                side_reply = generate_llm_response(
+                    customer_message=user_message,
+                    intent=side_intent,
+                    conversation_history=history,
+                    company_id=state.get("company_id"),
+                )
+                side_reply = (side_reply or "").strip()
+                if not side_reply:
+                    raise ValueError("Empty side-question response")
+            except Exception as exc:
+                print(f"Email-collection side-question response failed: {exc}")
+                side_reply = "I can help with that question."
+            return _save_and_return(
+                state, history, user_message,
+                side_reply + "\n\nWhen you're ready, please provide your email address so the support team can contact you.",
+                ticket_created=False,
+                awaiting_email=True,
+                conversation_status="collecting_customer_email",
+                response_source="side_question_during_contact_collection",
+            )
+        if is_issue_description:
+            generic_issue = normalized_email_turn in {
+                "i have some issue", "i have somme issue", "i have an issue",
+                "i have a problem", "i have some problem", "some issue",
+                "some problem", "an issue", "a problem",
+            }
+            if not generic_issue:
+                if not pending_ticket.get("original_complaint"):
+                    pending_ticket["original_complaint"] = user_message
+                    pending_ticket["issue_summary"] = user_message
+                else:
+                    pending_ticket.setdefault("detail_messages", []).append(user_message)
+                    pending_ticket["additional_details"] = "\n".join(
+                        pending_ticket["detail_messages"]
+                    )
+            return _save_and_return(
+                state, history, user_message,
+                "I can continue with your support request. Please provide your email address so the team can contact you.",
+                ticket_created=False,
+                awaiting_email=True,
+                conversation_status="collecting_customer_email",
+                response_source="required_field_first_intake",
             )
 
         if semantic_human_request:
@@ -3132,16 +4095,64 @@ def chat(data: dict):
             "GENERAL_QUERY": "GENERAL_QUESTION",
         }.get(first_intent, "UNCERTAIN")
 
+    # Policy/eligibility questions are informational, not ticket requests.
+    # Route their factual lookup to the Ticket KB without starting intake.
+    normalized_customer_turn = re.sub(r"\s+", " ", user_message.lower()).strip()
+    policy_knowledge_type = None
+    return_policy_question = bool(re.search(
+        r"\b(?:can|could|may|am i|is it possible|would i be able to|"
+        r"what is|what's|tell me about|explain)\b.{0,120}\b"
+        r"(?:return|refund|exchange|replace|replacement|warranty)\b|"
+        r"\b(?:return|refund|exchange|replacement|warranty)\s+"
+        r"(?:policy|window|period|eligibility|rules|conditions)\b",
+        normalized_customer_turn,
+    ))
+    return_problem_reported = bool(re.search(
+        r"\b(damaged|defective|faulty|broken|cracked|wrong item|"
+        r"missing|not working|doesn't work|does not work|failed|"
+        r"problem|issue|poor quality)\b",
+        normalized_customer_turn,
+    ))
+    if return_policy_question and not return_problem_reported:
+        category = "GENERAL_QUESTION"
+        policy_knowledge_type = "ticket"
+        print("POLICY QUESTION ROUTING OVERRIDE: Ticket KB; no ticket intake")
+
     print("FINAL ROUTING CATEGORY:", category)
+
+    # Explicit order-fulfilment failures are support complaints, not product
+    # enquiries or routine shipment lookups. Route these through ticket intake
+    # so the company's configured contact fields are collected first.
+    normalized_customer_turn = re.sub(r"\s+", " ", user_message.lower()).strip()
+    clear_order_fulfilment_problem = bool(re.search(
+        r"\b("
+        r"not delivered|not yet delivered|has not delivered|hasn't delivered|"
+        r"not shipped|not yet shipped|has not shipped|hasn't shipped|hasnt shipped|"
+        r"not dispatched|has not dispatched|hasn't dispatched|hasnt dispatched|"
+        r"not yet arrived|has not arrived|hasn't arrived|"
+        r"never arrived|not received|haven't received|have not received|"
+        r"still waiting for (?:my )?(?:order|package|delivery)|"
+        r"delivery is delayed|order is delayed|package is missing|"
+        r"wrong item (?:was )?delivered|damaged (?:item|product|package)"
+        r")\b",
+        normalized_customer_turn,
+    ))
+    if clear_order_fulfilment_problem:
+        category = "CUSTOMER_ISSUE"
+        print("ORDER FULFILMENT COMPLAINT OVERRIDE: ticket intake required")
 
     # A support intent is not automatically a sufficiently described complaint.
     # Keep vague statements in normal conversation until the customer explains
     # what actually happened; only then begin email collection.
     normalized_issue_message = re.sub(
-        r"\\s+", " ", user_message.lower()
+        r"\s+", " ", user_message.lower()
     ).strip(" .,!?")
     generic_issue_statements = {
         "i have some issue",
+        "i have somme issue",
+        "i have somme issues",
+        "i have somme problem",
+        "i have somme problems",
         "i have an issue",
         "i have some issues",
         "i have a problem",
@@ -3170,100 +4181,61 @@ def chat(data: dict):
             or topic_only_statement
         )
     ):
-        if "payment" in normalized_issue_message or "billing" in normalized_issue_message:
-            reply = (
-                "Understood — this is about payment. What exactly happened? "
-                "For example, was the payment declined, was money deducted "
-                "without confirmation, or were you charged more than once?"
-            )
-        else:
-            reply = (
-                "I can help with that. What exactly happened? "
-                "Please describe what you were trying to do and what went wrong."
+        # A vague but explicit issue statement starts ticket intake.
+        # Collect configured global contact fields first; do not run
+        # company-domain validation until the customer describes the issue.
+        existing_pending = state.get("pending_ticket") or {}
+        pending_ticket = {
+            **existing_pending,
+            "customer_email": (
+                existing_pending.get("customer_email")
+                or state.get("customer_email")
+            ),
+            "original_complaint": existing_pending.get("original_complaint") or "",
+            "issue_summary": existing_pending.get("issue_summary") or "",
+            "additional_details": existing_pending.get("additional_details", ""),
+            "detail_messages": existing_pending.get("detail_messages", []),
+            "asked_questions": existing_pending.get("asked_questions", []),
+            "intent": existing_pending.get("intent") or "general_enquiry",
+            "intervention": existing_pending.get("intervention") or "AI_ASSISTED_HUMAN_REQUIRED",
+            "intervention_confidence": existing_pending.get("intervention_confidence") or 0.75,
+            "custom_fields": existing_pending.get("custom_fields", {}),
+            "step": "collecting_custom_fields",
+            "intake_stage": "initial_contact",
+        }
+        state["pending_ticket"] = pending_ticket
+        first_global_field = _next_missing_global_ticket_field(
+            pending_ticket, state.get("company_id")
+        )
+        print("VAGUE COMPLAINT: starting required-field-first intake")
+        if first_global_field:
+            return _ask_for_ticket_field(
+                state, history, user_message, pending_ticket, first_global_field
             )
 
-        print(
-            "VAGUE COMPLAINT CLARIFICATION:",
-            normalized_issue_message,
-        )
+        pending_ticket["step"] = "human_support_issue_details"
         return _save_and_return(
-            state,
-            history,
-            user_message,
-            reply,
+            state, history, user_message,
+            "I can help with that. What happened?",
             ticket_created=False,
             awaiting_issue_details=True,
-            conversation_status="clarifying_complaint",
-            response_source="vague_complaint_clarification",
+            conversation_status="collecting_support_issue",
+            response_source="ticket_information_collection",
         )
             # ------------------------------------------------
 
     # ------------------------------------------------
+    # HUMAN SUPPORT REQUEST
     # ------------------------------------------------
-    # CAPTURE ISSUE DETAILS AFTER A HUMAN-SUPPORT PROMPT
-    # ------------------------------------------------
 
-    explicit_human_request = (
-        category == "HUMAN_SUPPORT_REQUEST"
-    )
-
-    if (
-        state.get("human_support_issue_pending")
-        and not explicit_human_request
-    ):
-        if category not in {"CUSTOMER_ISSUE", "FOLLOW_UP_ISSUE"}:
-            reply = (
-                "I understand that you want human support. "
-                "Please describe the problem, or repeat your request "
-                "if you want to continue without describing it."
-            )
-            return _save_and_return(
-                state,
-                history,
-                user_message,
-                reply,
-                ticket_created=False,
-                human_escalation_count=state.get("human_escalation_count", 0),
-                conversation_status="collecting_support_issue",
-            )
-
-        complaint = user_message.strip()
-        state["last_customer_complaint"] = complaint
-        issue_messages = state.get("issue_messages", [])
-        if not isinstance(issue_messages, list):
-            issue_messages = []
-        issue_messages.append(complaint)
-        state["issue_messages"] = issue_messages
-        state["human_support_issue_pending"] = False
-
-        reply = (
-            "Thank you for explaining the issue. I've noted these details. "
-            "If you still want human support, ask me again and I'll continue "
-            "preparing your support request."
-        )
-        return _save_and_return(
-            state,
-            history,
-            user_message,
-            reply,
-            ticket_created=False,
-            conversation_status="support_issue_collected",
-        )
-
-    # ------------------------------------------------
-    # EARLY HUMAN-SUPPORT ESCALATION (3 REQUESTS)
-    # ------------------------------------------------
+    explicit_human_request = category == "HUMAN_SUPPORT_REQUEST"
 
     if explicit_human_request:
-        escalation_count = int(state.get("human_escalation_count") or 0) + 1
-        state["human_escalation_count"] = escalation_count
-
         existing_pending = state.get("pending_ticket") or {}
         complaint_parts = []
         existing_complaint = (
             existing_pending.get("issue_summary")
             or existing_pending.get("original_complaint")
-            or state.get("last_customer_complaint")
         )
         if existing_complaint and str(existing_complaint).strip():
             complaint_parts.append(str(existing_complaint).strip())
@@ -3271,147 +4243,94 @@ def chat(data: dict):
         issue_messages = state.get("issue_messages", [])
         if isinstance(issue_messages, list):
             complaint_parts.extend(
-                str(message).strip()
-                for message in issue_messages
-                if message and str(message).strip()
+                str(item).strip()
+                for item in issue_messages
+                if item and str(item).strip()
             )
-
         complaint = " ".join(dict.fromkeys(complaint_parts)).strip()
 
-        # Request 1 and 2: ask for the issue if we do not have it yet.
-        if escalation_count < 3:
-            if not complaint:
-                state["human_support_issue_pending"] = True
-                if escalation_count == 1:
-                    reply = (
-                        "I can help arrange support through a ticket. What issue are you "
-                        "experiencing, and what would you like our support team to help with?"
-                    )
-                else:
-                    reply = (
-                        "I understand you want a human agent. I still need to know what "
-                        "problem you're facing so I can include the reason in your ticket. "
-                        "Please describe the issue."
-                    )
-            else:
-                reply = (
-                    "I've noted the issue you described. I can arrange follow-up from "
-                    "our support team through a ticket. If you want to proceed, please "
-                    "request human support again."
-                )
-
-            return _save_and_return(
-                state,
-                history,
-                user_message,
-                reply,
-                ticket_created=False,
-                human_escalation_count=escalation_count,
-                conversation_status=(
-                    "collecting_support_issue" if not complaint
-                    else "human_escalation_requested"
-                ),
-            )
-
-        # Require a real complaint before human escalation can enter ticket flow.
-        issue_was_provided = bool(complaint and complaint.strip())
-
-        if not issue_was_provided:
-            pending_ticket = {
-                **existing_pending,
-                "original_complaint": "",
-                "issue_summary": "",
-                "step": "collecting_support_issue",
-            }
-            state["pending_ticket"] = pending_ticket
-            state["human_escalation_triggered"] = False
-
-            reply = (
-                "I can arrange human support, but first please describe "
-                "the actual issue you're facing."
-            )
-            return _save_and_return(
-                state, history, user_message, reply,
-                ticket_created=False,
-                awaiting_issue_details=True,
-                conversation_status="collecting_support_issue",
-            )
-
+        email = existing_pending.get("customer_email") or state.get("customer_email")
         pending_ticket = {
             **existing_pending,
+            "customer_email": email if email and valid_email(email) else None,
             "original_complaint": complaint,
             "issue_summary": complaint,
             "additional_details": existing_pending.get("additional_details", ""),
             "detail_messages": existing_pending.get("detail_messages", []),
             "asked_questions": existing_pending.get("asked_questions", []),
-            "intent": existing_pending.get("intent", "human_support_request"),
-            "intervention": existing_pending.get("intervention"),
-            "intervention_confidence": existing_pending.get("intervention_confidence", 0.0),
-            "step": "customer_email",
+            "human_support_requested": True,
         }
-        state["human_escalation_triggered"] = True
-        state["pending_ticket"] = pending_ticket
 
-        email = existing_pending.get("customer_email") or state.get("customer_email")
-        if email and valid_email(email):
-            pending_ticket["customer_email"] = email
-            domain_result = _check_company_domain(
-                complaint, history, state.get("company_id")
-            )
-            decision = domain_result.get("decision", "UNCERTAIN")
-
-            if decision != "IN_DOMAIN":
-                state.pop("pending_ticket", None)
-                state["human_escalation_triggered"] = False
-                state["issue_messages"] = []
-                state["last_customer_complaint"] = ""
-                reply = (
-                    _domain_rejection_message()
-                    if decision == "OUT_OF_DOMAIN"
-                    else "I couldn't verify how this issue relates to our services. "
-                         "Could you explain that connection?"
-                )
-                return _save_and_return(
-                    state, history, user_message, reply,
-                    ticket_created=False,
-                    conversation_status="complaint_not_verified",
-                )
-
-            try:
-                intent_result, intervention_result = _classify_issue(complaint)
-            except Exception as exc:
-                print(f"Human-escalation issue classification failed: {exc}")
-                return _save_and_return(
-                    state, history, user_message,
-                    "I couldn't verify the issue just now. Please try again.",
-                    ticket_created=False,
-                    conversation_status="complaint_validation_error",
-                )
-
-            intent = intent_result["intent"]
-            intervention = intervention_result["intervention"]
-            confidence = intervention_result["confidence"]
-            state["last_customer_complaint"] = complaint
-            state["last_customer_intent"] = intent
-            state["last_intervention"] = intervention
-            state["last_intervention_confidence"] = confidence
-
-            return _start_ticket_collection(
-                state, history, user_message, complaint,
-                intent, intervention, confidence,
-                _first_investigation_question(complaint),
+        if _ticket_email_required(state.get("company_id"), pending_ticket.get("intent")) and (not email or not valid_email(email)):
+            pending_ticket["step"] = "customer_email"
+            state["pending_ticket"] = pending_ticket
+            return _save_and_return(
+                state, history, user_message,
+                "Certainly. I can arrange human support. Please provide your email address first so the support team can send you updates about your request.",
+                ticket_created=False,
+                awaiting_email=True,
+                conversation_status="collecting_customer_email",
             )
 
-        pending_ticket["step"] = "customer_email"
-        reply = (
-            "Please provide your email address first. I'll verify the issue "
-            "before proceeding with a support ticket."
+        pending_ticket["customer_email"] = email
+        state["customer_email"] = email
+
+        if not complaint:
+            pending_ticket["step"] = "human_support_issue_details"
+            state["pending_ticket"] = pending_ticket
+            return _save_and_return(
+                state, history, user_message,
+                "Thank you. Now please describe the actual problem you're experiencing. I'll use that information to prepare an accurate request for the human support team.",
+                ticket_created=False,
+                awaiting_issue_details=True,
+                conversation_status="collecting_support_issue",
+            )
+
+        domain_result = _check_company_domain(
+            complaint, history, state.get("company_id")
         )
-        return _save_and_return(
-            state, history, user_message, reply,
-            ticket_created=False,
-            awaiting_customer_email=True,
-            conversation_status="collecting_customer_email",
+        domain_decision = domain_result.get("decision", "UNCERTAIN")
+        if domain_decision == "OUT_OF_DOMAIN":
+            return _save_and_return(
+                state, history, user_message, _domain_rejection_message(),
+                ticket_created=False,
+                conversation_status="out_of_domain",
+                response_source="company_domain_validation",
+            )
+        if domain_decision == "UNCERTAIN":
+            pending_ticket["step"] = "human_support_issue_details"
+            state["pending_ticket"] = pending_ticket
+            return _save_and_return(
+                state, history, user_message,
+                "I can arrange human support. Please explain how this issue relates to this company's products or services.",
+                ticket_created=False,
+                awaiting_issue_details=True,
+                conversation_status="domain_clarification_required",
+            )
+
+        try:
+            intent_result, intervention_result = _classify_issue(complaint)
+        except Exception as exc:
+            print(f"Human-support issue classification failed: {exc}")
+            state["pending_ticket"] = pending_ticket
+            return _save_and_return(
+                state, history, user_message,
+                "I couldn't assess the issue just now. Please try again.",
+                ticket_created=False,
+                conversation_status="complaint_validation_error",
+            )
+
+        state["last_customer_complaint"] = complaint
+        state["last_customer_intent"] = intent_result["intent"]
+        state["last_intervention"] = intervention_result["intervention"]
+        state["last_intervention_confidence"] = intervention_result["confidence"]
+        state["pending_ticket"] = pending_ticket
+        return _start_ticket_collection(
+            state, history, user_message, complaint,
+            intent_result["intent"],
+            intervention_result["intervention"],
+            intervention_result["confidence"],
+            _first_investigation_question(complaint),
         )
 
     # STEP 5: NORMAL CHAT AND BUSINESS ENQUIRIES
@@ -3450,6 +4369,7 @@ def chat(data: dict):
                 context=business_context,
                 conversation_history=history,
                 company_id=state.get("company_id"),
+                knowledge_type=policy_knowledge_type,
             )
         except Exception as exc:
             print(f"Gemini response generation failed: {exc}")
@@ -3496,17 +4416,8 @@ def chat(data: dict):
             "asked_questions": [],
             "step": "customer_email",
         }
-        reply = (
-            "I'm sorry you're experiencing this issue. "
-            "Please provide your email address so I can verify "
-            "the request and help you further."
-        )
-        return _save_and_return(
-            state, history, user_message, reply,
-            ticket_created=False,
-            awaiting_email=True,
-            conversation_status="collecting_customer_email",
-        )
+        # Continue through domain and intent analysis before asking for
+        # whichever contact fields this company has configured.
 
         domain_result = _check_company_domain(issue_text, history, state.get("company_id"))
         domain_decision = domain_result.get("decision", "UNCERTAIN")
@@ -3544,6 +4455,9 @@ def chat(data: dict):
         intent = intent_result["intent"]
         intervention = intervention_result["intervention"]
         intervention_confidence = intervention_result["confidence"]
+        if clear_order_fulfilment_problem:
+            intervention = "AI_ASSISTED_HUMAN_REQUIRED"
+            intervention_confidence = max(float(intervention_confidence or 0), 0.90)
 
         state["last_customer_complaint"] = issue_text
         state["last_customer_intent"] = intent
@@ -3607,18 +4521,47 @@ def chat(data: dict):
         intervention_confidence = intervention_result["confidence"]
 
     else:
-        # Unknown categories must not be treated as complaints by default.
-        reply = (
-            "Could you tell me a little more about what you need help with?"
-        )
+        # A low-confidence/unknown classification is NOT a reason to fall
+        # back to a generic scripted clarification. Let the conversational
+        # model respond to the customer's actual message and recent context.
+        # This path must never start, modify, or claim to create a ticket.
+        try:
+            reply = generate_llm_response(
+                customer_message=user_message,
+                intent="general_enquiry",
+                context=(
+                    "The conversation classifier could not confidently assign "
+                    "a support action to this message. Continue the conversation "
+                    "naturally. First answer the customer's actual question or "
+                    "acknowledge what they said. Use the recent conversation to "
+                    "understand short replies and references. If the meaning is "
+                    "genuinely unclear, ask one specific, conversational "
+                    "clarification question. Do not assume this is a complaint, "
+                    "do not request an email address, do not start a ticket, and "
+                    "do not mention classification or uncertainty."
+                ),
+                conversation_history=history,
+                company_id=state.get("company_id"),
+            )
+            reply = (reply or "").strip()
+            if not reply:
+                raise ValueError("Gemini returned an empty conversational response.")
+        except Exception as exc:
+            print(f"Uncertain-turn conversational response failed: {exc}")
+            reply = (
+                "I may have misunderstood that. Could you rephrase what "
+                "you'd like help with?"
+            )
+
         return _save_and_return(
             state,
             history,
             user_message,
             reply,
             ticket_created=False,
-            needs_clarification=True,
-            conversation_status="awaiting_clarification",
+            needs_clarification=False,
+            conversation_status="conversation_active",
+            response_source="gemini_uncertain_turn_fallback",
         )
 
     # ------------------------------------------------
@@ -3678,6 +4621,7 @@ def chat(data: dict):
                 context=opening_context,
                 conversation_history=history,
                 company_id=state.get("company_id"),
+                knowledge_type="ticket",
             )
 
             if not opening_reply or not opening_reply.strip():
@@ -3724,6 +4668,7 @@ def chat(data: dict):
             context=context,
             conversation_history=history,
             company_id=state.get("company_id"),
+            knowledge_type="ticket",
         )
         source = "gemini_llm"
 
