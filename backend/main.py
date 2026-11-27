@@ -2877,13 +2877,28 @@ def chat(data: dict):
         normalized_clarification = re.sub(
             r"\s+", " ", user_message.lower()
         ).strip(" .,!?")
-        no_purchase_confirmed = bool(re.search(
-            r"\b(?:i\s+)?(?:haven't|have not|didn't|did not|never)\s+"
-            r"(?:placed|place|made|make|ordered|order|bought|buy|purchased|purchase)\b"
-            r"|\bno\s+(?:i\s+)?(?:haven't|have not|didn't|did not)\s+"
-            r"(?:placed|place|ordered|order|bought|buy|purchased|purchase)\b",
+        denial_prefix = bool(re.search(
+            r"\b(?:i\s+)?(?:haven't|have not|didn't|did not|never)\b",
             normalized_clarification,
         ))
+        purchase_terms = {
+            "placed", "place", "made", "make", "ordered", "order",
+            "bought", "buy", "purchased", "purchase",
+        }
+        clarification_words = re.findall(
+            r"[a-z]+", normalized_clarification
+        )
+        # Customers frequently misspell "ordered" (for example,
+        # "oreded"). Treat a close spelling after an explicit negative
+        # as the same correction instead of leaving the old complaint
+        # eligible for timeout submission.
+        from difflib import SequenceMatcher
+        fuzzy_purchase_verb = any(
+            SequenceMatcher(None, word, term).ratio() >= 0.78
+            for word in clarification_words
+            for term in purchase_terms
+        )
+        no_purchase_confirmed = denial_prefix and fuzzy_purchase_verb
         earlier_order_fulfilment_claim = bool(re.search(
             r"\b(order|delivery|shipment)\b.{0,120}\b("
             r"not received|never received|haven't received|have not received|"
