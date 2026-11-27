@@ -119,7 +119,8 @@ def generate_llm_response(
     intent: str = "general_enquiry",
     context: str = "",
     conversation_history: list = None,
-    company_id=None
+    company_id=None,
+    knowledge_type: str = None,
 ) -> str:
     """
     Generate a response using company configuration and relevant
@@ -162,10 +163,31 @@ def generate_llm_response(
                     "advanced_instructions": configuration.advanced_instructions or "",
                 }
 
+            # Retrieval is deliberately isolated by knowledge type.
+            # Only active complaint-investigation responses receive ticket KB
+            # context; greetings, FAQs, business questions and side questions
+            # use general KB context. Legacy files default to general.
+            selected_knowledge_type = (
+                "ticket" if knowledge_type == "ticket" or intent == "customer_issue"
+                else "general"
+            )
             records = (
                 db.query(KnowledgeBaseRecord)
-                .filter(KnowledgeBaseRecord.company_id == company.id)
+                .join(
+                    KnowledgeBaseFile,
+                    KnowledgeBaseFile.id == KnowledgeBaseRecord.file_id,
+                )
+                .filter(
+                    KnowledgeBaseRecord.company_id == company.id,
+                    KnowledgeBaseFile.knowledge_type == selected_knowledge_type,
+                )
                 .all()
+            )
+            print(
+                "KNOWLEDGE BASE ROUTING:",
+                selected_knowledge_type,
+                "records:", len(records),
+                "company:", company.id,
             )
 
             
@@ -598,6 +620,15 @@ async def initialize_knowledge_base_tables():
         connection.execute(text(
             "ALTER TABLE tickets ADD COLUMN IF NOT EXISTS "
             "custom_fields JSONB NOT NULL DEFAULT '{}'::jsonb"
+        ))
+        # Safe in-place migration: pre-existing uploaded files remain general KB.
+        connection.execute(text(
+            "ALTER TABLE knowledge_base_files ADD COLUMN IF NOT EXISTS "
+            "knowledge_type VARCHAR(20) NOT NULL DEFAULT 'general'"
+        ))
+        connection.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_knowledge_base_files_knowledge_type "
+            "ON knowledge_base_files (knowledge_type)"
         ))
 
     asyncio.create_task(
@@ -3081,6 +3112,7 @@ def chat(data: dict):
                             ),
                             conversation_history=history,
                             company_id=state.get("company_id"),
+                            knowledge_type="ticket",
                         )
 
                         reply = (reply or "").strip()
@@ -4234,6 +4266,7 @@ def chat(data: dict):
                 context=opening_context,
                 conversation_history=history,
                 company_id=state.get("company_id"),
+                knowledge_type="ticket",
             )
 
             if not opening_reply or not opening_reply.strip():
@@ -4280,6 +4313,7 @@ def chat(data: dict):
             context=context,
             conversation_history=history,
             company_id=state.get("company_id"),
+            knowledge_type="ticket",
         )
         source = "gemini_llm"
 
