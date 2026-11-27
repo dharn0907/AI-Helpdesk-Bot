@@ -215,6 +215,11 @@ class KnowledgeBaseFile(Base):
     original_filename = Column(String(255), nullable=False)
     stored_filename = Column(String(255), nullable=False, unique=True)
     file_type = Column(String(20), nullable=False)
+    # Separates ordinary business knowledge from support/ticket procedures.
+    # Existing rows are migrated as general knowledge for backward compatibility.
+    knowledge_type = Column(
+        String(20), nullable=False, default="general", server_default="general", index=True
+    )
     row_count = Column(Integer, default=0, nullable=False)
     status = Column(String(30), default="processed", nullable=False)
 
