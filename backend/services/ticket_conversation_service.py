@@ -537,21 +537,21 @@ For non-issue messages, do not modify the existing issue information.
     # order was placed. The LLM must not silently resolve this ambiguity.
     earlier_delivery_claim = bool(
         re.search(
-            r"\\b(order|delivery|shipment)\\b.{0,100}\\b("
+            r"\b(order|delivery|shipment)\b.{0,100}\b("
             r"not received|never received|haven't received|have not received|"
-            r"hasn't arrived|has not arrived|not arrived|still waiting"
-            r")\\b|\\b("
+            r"rec(e)?iv(ed)|hasn't arrived|has not arrived|not arrived|still waiting"
+            r")\b|\b("
             r"not received|never received|haven't received|have not received|"
-            r"hasn't arrived|has not arrived|not arrived|still waiting"
-            r").{0,100}\\b(order|delivery|shipment)\\b",
+            r"rec(e)?iv(ed)|hasn't arrived|has not arrived|not arrived|still waiting"
+            r").{0,100}\b(order|delivery|shipment)\b",
             original_complaint,
             re.IGNORECASE,
         )
     )
     latest_denies_purchase = bool(
         re.search(
-            r"\\b(didn'?t|did not|haven't|have not|never)\\b"
-            r".{0,35}\\b(place|placed|buy|bought|purchase|purchased|order)\\b",
+            r"\b(didn'?t|did not|haven't|have not|never)\b"
+            r".{0,35}\b(place|placed|buy|bought|purchase|purchased|order)\b",
             customer_message,
             re.IGNORECASE,
         )
