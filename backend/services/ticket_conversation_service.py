@@ -556,7 +556,11 @@ For non-issue messages, do not modify the existing issue information.
             re.IGNORECASE,
         )
     )
-    if earlier_delivery_claim and latest_denies_purchase:
+    if (
+        earlier_delivery_claim
+        and latest_denies_purchase
+        and not pending_ticket.get("pending_contradictions")
+    ):
         action = "ADD_DETAIL"
         relevant_details = customer_message.strip()
         issue_summary = existing_summary or original_complaint
