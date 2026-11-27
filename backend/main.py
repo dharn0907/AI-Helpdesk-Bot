@@ -3768,6 +3768,29 @@ def chat(data: dict):
             "GENERAL_QUERY": "GENERAL_QUESTION",
         }.get(first_intent, "UNCERTAIN")
 
+    # Policy/eligibility questions are informational, not ticket requests.
+    # Route their factual lookup to the Ticket KB without starting intake.
+    normalized_customer_turn = re.sub(r"\\s+", " ", user_message.lower()).strip()
+    policy_knowledge_type = None
+    return_policy_question = bool(re.search(
+        r"\\b(?:can|could|may|am i|is it possible|would i be able to|"
+        r"what is|what's|tell me about|explain)\\b.{0,120}\\b"
+        r"(?:return|refund|exchange|replace|replacement|warranty)\\b|"
+        r"\\b(?:return|refund|exchange|replacement|warranty)\\s+"
+        r"(?:policy|window|period|eligibility|rules|conditions)\\b",
+        normalized_customer_turn,
+    ))
+    return_problem_reported = bool(re.search(
+        r"\\b(damaged|defective|faulty|broken|cracked|wrong item|"
+        r"missing|not working|doesn't work|does not work|failed|"
+        r"problem|issue|poor quality)\\b",
+        normalized_customer_turn,
+    ))
+    if return_policy_question and not return_problem_reported:
+        category = "GENERAL_QUESTION"
+        policy_knowledge_type = "ticket"
+        print("POLICY QUESTION ROUTING OVERRIDE: Ticket KB; no ticket intake")
+
     print("FINAL ROUTING CATEGORY:", category)
 
     # Explicit order-fulfilment failures are support complaints, not product
@@ -3998,6 +4021,7 @@ def chat(data: dict):
                 context=business_context,
                 conversation_history=history,
                 company_id=state.get("company_id"),
+                knowledge_type=policy_knowledge_type,
             )
         except Exception as exc:
             print(f"Gemini response generation failed: {exc}")
