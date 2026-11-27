@@ -1258,14 +1258,6 @@ def _start_ticket_collection(
         "step": "additional_details",
         "custom_fields": existing_pending.get("custom_fields", {}),
     }
-    first_global_field = _next_missing_global_ticket_field(
-        state["pending_ticket"], state.get("company_id")
-    )
-    if first_global_field:
-        state["pending_ticket"]["intake_stage"] = "initial_contact"
-        return _ask_for_ticket_field(
-            state, history, user_message, state["pending_ticket"], first_global_field
-        )
     return _save_and_return(
         state,
         history,
@@ -3800,6 +3792,8 @@ def chat(data: dict):
     clear_order_fulfilment_problem = bool(re.search(
         r"\b("
         r"not delivered|not yet delivered|has not delivered|hasn't delivered|"
+        r"not shipped|not yet shipped|has not shipped|hasn't shipped|hasnt shipped|"
+        r"not dispatched|has not dispatched|hasn't dispatched|hasnt dispatched|"
         r"not yet arrived|has not arrived|hasn't arrived|"
         r"never arrived|not received|haven't received|have not received|"
         r"still waiting for (?:my )?(?:order|package|delivery)|"
@@ -3820,6 +3814,10 @@ def chat(data: dict):
     ).strip(" .,!?")
     generic_issue_statements = {
         "i have some issue",
+        "i have somme issue",
+        "i have somme issues",
+        "i have somme problem",
+        "i have somme problems",
         "i have an issue",
         "i have some issues",
         "i have a problem",
@@ -4222,23 +4220,6 @@ def chat(data: dict):
     print("INTENT:", intent)
     print("INTERVENTION:", intervention)
     print("INTERVENTION CONFIDENCE:", intervention_confidence)
-    # Apply this company's configured contact requirements only after
-    # identifying the complaint intent. The legacy default remains email.
-    active_pending = state.get("pending_ticket")
-    if active_pending and active_pending.get("step") == "customer_email":
-        if _ticket_email_required(state.get("company_id"), intent):
-            reply = (
-                "I'm sorry you're experiencing this issue. "
-                "Please provide your email address so our support team can send updates."
-            )
-            return _save_and_return(
-                state, history, user_message, reply,
-                ticket_created=False,
-                awaiting_email=True,
-                conversation_status="collecting_customer_email",
-            )
-        active_pending["step"] = "additional_details"
-
     # ------------------------------------------------
     # STEP 8: PROFESSIONAL CONVERSATION FOR HUMAN-REQUIRED ISSUES
     # ------------------------------------------------
