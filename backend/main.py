@@ -2887,12 +2887,16 @@ def chat(data: dict):
         earlier_order_fulfilment_claim = bool(re.search(
             r"\b(order|delivery|shipment)\b.{0,120}\b("
             r"not received|never received|haven't received|have not received|"
-            r"not shipped|hasn't shipped|has not shipped|not dispatched|"
-            r"hasn't arrived|has not arrived|not arrived|still waiting"
+            r"not shipped|hasn't shipped|has not shipped|hasnt shipped|"
+            r"hasn't been shipped|has not been shipped|hasnt been shipped|"
+            r"not dispatched|hasn't dispatched|has not dispatched|hasnt dispatched|"
+            r"hasn't arrived|has not arrived|hasnt arrived|not arrived|still waiting"
             r")\b|"
             r"\b(not received|never received|haven't received|have not received|"
-            r"not shipped|hasn't shipped|has not shipped|not dispatched|"
-            r"hasn't arrived|has not arrived|not arrived|still waiting"
+            r"not shipped|hasn't shipped|has not shipped|hasnt shipped|"
+            r"hasn't been shipped|has not been shipped|hasnt been shipped|"
+            r"not dispatched|hasn't dispatched|has not dispatched|hasnt dispatched|"
+            r"hasn't arrived|has not arrived|hasnt arrived|not arrived|still waiting"
             r").{0,120}\b(order|delivery|shipment)\b",
             str(pending_ticket.get("original_complaint") or ""),
             re.IGNORECASE,
