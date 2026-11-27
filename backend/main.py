@@ -1258,6 +1258,16 @@ def _start_ticket_collection(
         "step": "additional_details",
         "custom_fields": existing_pending.get("custom_fields", {}),
     }
+    # Collect company-configured required contact fields at the beginning
+    # of ticket intake, before asking the customer to describe the issue.
+    first_global_field = _next_missing_global_ticket_field(
+        state["pending_ticket"], state.get("company_id")
+    )
+    if first_global_field:
+        state["pending_ticket"]["intake_stage"] = "initial_contact"
+        return _ask_for_ticket_field(
+            state, history, user_message, state["pending_ticket"], first_global_field
+        )
     return _save_and_return(
         state,
         history,
