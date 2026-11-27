@@ -2870,6 +2870,82 @@ def chat(data: dict):
             }
         )
 
+        # A customer may resolve an order contradiction by confirming that
+        # no purchase was made. This is a pre-purchase enquiry, not a
+        # delivery complaint: close the pending intake before any summary,
+        # confirmation, or ticket-creation path can run.
+        normalized_clarification = re.sub(
+            r"\s+", " ", user_message.lower()
+        ).strip(" .,!?")
+        no_purchase_confirmed = bool(re.search(
+            r"\b(?:i\s+)?(?:haven't|have not|didn't|did not|never)\s+"
+            r"(?:placed|place|made|make|ordered|order|bought|buy|purchased|purchase)\b"
+            r"|\bno\s+(?:i\s+)?(?:haven't|have not|didn't|did not)\s+"
+            r"(?:placed|place|ordered|order|bought|buy|purchased|purchase)\b",
+            normalized_clarification,
+        ))
+        earlier_order_fulfilment_claim = bool(re.search(
+            r"\b(order|delivery|shipment)\b.{0,120}\b("
+            r"not received|never received|haven't received|have not received|"
+            r"not shipped|hasn't shipped|has not shipped|not dispatched|"
+            r"hasn't arrived|has not arrived|not arrived|still waiting"
+            r")\b|"
+            r"\b(not received|never received|haven't received|have not received|"
+            r"not shipped|hasn't shipped|has not shipped|not dispatched|"
+            r"hasn't arrived|has not arrived|not arrived|still waiting"
+            r").{0,120}\b(order|delivery|shipment)\b",
+            str(pending_ticket.get("original_complaint") or ""),
+            re.IGNORECASE,
+        ))
+        if pending_conflicts and no_purchase_confirmed and earlier_order_fulfilment_claim:
+            print(
+                "CONTRADICTION RESOLVED: customer confirms no order was placed; "
+                "closing delivery ticket intake without creating a ticket."
+            )
+            state.pop("pending_ticket", None)
+            state["issue_messages"] = []
+            state["last_customer_complaint"] = ""
+            state["human_support_issue_pending"] = False
+            state["human_escalation_count"] = 0
+            try:
+                pre_purchase_reply = generate_llm_response(
+                    customer_message=user_message,
+                    intent="business_enquiry",
+                    context=(
+                        "The customer has clarified that they have NOT placed "
+                        "an order. Their earlier delivery complaint is no longer "
+                        "an active ticket request. Treat this as a pre-purchase "
+                        "business/product enquiry. Answer the customer's actual "
+                        "question naturally using the company's General Knowledge "
+                        "Base and configuration. Do not create or mention a ticket. "
+                        "Do not assume which product they want; ask what they are "
+                        "interested in only if that is useful."
+                    ),
+                    conversation_history=history,
+                    company_id=state.get("company_id"),
+                    knowledge_type="general",
+                )
+                pre_purchase_reply = (pre_purchase_reply or "").strip()
+                if not pre_purchase_reply:
+                    raise ValueError("Empty pre-purchase response")
+            except Exception as exc:
+                print(f"Pre-purchase response generation failed: {exc}")
+                pre_purchase_reply = (
+                    "Understood—you haven't placed an order yet, so I won't "
+                    "treat this as a delivery issue or create a support ticket. "
+                    "Are you looking for information about a product before buying?"
+                )
+            return _save_and_return(
+                state,
+                history,
+                user_message,
+                pre_purchase_reply,
+                ticket_created=False,
+                awaiting_additional_details=False,
+                conversation_status="pre_purchase_enquiry",
+                response_source="resolved_order_contradiction",
+            )
+
         # Resolve an outstanding contradiction before normal processing.
         if pending_conflicts:
             resolution_confidence = interpretation.get(
