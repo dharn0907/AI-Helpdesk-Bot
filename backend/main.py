@@ -2178,6 +2178,88 @@ def chat(data: dict):
             pending_ticket["step"] = "additional_details"
             return _finish_ticket_creation(state, history, user_message, session_id, pending_ticket)
         value = user_message.strip()
+        is_contact_email_field = (
+            field.get("type") == "email" or field_key == "email"
+        )
+        if is_contact_email_field and not valid_email(value):
+            normalized_value = re.sub(r"\\s+", " ", value.lower()).strip()
+            looks_like_question = (
+                "?" in value
+                or bool(re.match(
+                    r"^(?:do|does|did|can|could|would|what|which|who|where|when|why|how|is|are|am|tell me|show me)\\b",
+                    normalized_value,
+                ))
+            )
+            is_side_question = (
+                semantic_category in {"SMALL_TALK", "GENERAL_QUESTION", "PRODUCT_ENQUIRY"}
+                or looks_like_question
+            )
+            is_issue_description = (
+                semantic_category in {"CUSTOMER_ISSUE", "FOLLOW_UP_ISSUE"}
+                or bool(re.search(
+                    r"\\b(not delivered|not shipped|not dispatched|not received|"
+                    r"payment|refund|damaged|broken|not working|order problem|"
+                    r"delivery problem|issue with my|problem with my)\\b",
+                    normalized_value,
+                ))
+            )
+            if is_side_question:
+                side_intent = (
+                    "business_enquiry"
+                    if semantic_category == "PRODUCT_ENQUIRY"
+                    else "general_enquiry"
+                )
+                try:
+                    side_reply = generate_llm_response(
+                        customer_message=user_message,
+                        intent=side_intent,
+                        conversation_history=history,
+                        company_id=state.get("company_id"),
+                    )
+                    side_reply = (side_reply or "").strip()
+                    if not side_reply:
+                        raise ValueError("Empty side-question response")
+                except Exception as exc:
+                    print(f"Initial-contact side-question response failed: {exc}")
+                    side_reply = "I can help with that question. "
+                question = (field.get("prompt") or "").strip() or (
+                    f"Could you provide your {field.get('label', 'contact information')}?"
+                )
+                return _save_and_return(
+                    state, history, user_message,
+                    side_reply + "\\n\\nWhen you're ready, " + question[0].lower() + question[1:],
+                    ticket_created=False,
+                    awaiting_custom_field=True,
+                    required_field=field_key,
+                    conversation_status="collecting_ticket_information",
+                    response_source="side_question_during_initial_contact",
+                )
+            if is_issue_description:
+                generic_issue = normalized_value in {
+                    "i have some issue", "i have somme issue", "i have an issue",
+                    "i have a problem", "i have some problem", "some issue",
+                    "some problem", "an issue", "a problem",
+                }
+                if not generic_issue:
+                    if not pending_ticket.get("original_complaint"):
+                        pending_ticket["original_complaint"] = value
+                        pending_ticket["issue_summary"] = value
+                    else:
+                        pending_ticket.setdefault("detail_messages", []).append(value)
+                        pending_ticket["additional_details"] = "\\n".join(
+                            pending_ticket["detail_messages"]
+                        )
+                question = (field.get("prompt") or "").strip() or (
+                    f"Could you provide your {field.get('label', 'contact information')}?"
+                )
+                return _save_and_return(
+                    state, history, user_message, question,
+                    ticket_created=False,
+                    awaiting_custom_field=True,
+                    required_field=field_key,
+                    conversation_status="collecting_ticket_information",
+                    response_source="required_field_first_intake",
+                )
         if value.lower() in {"skip", "skip this", "prefer not to say", "rather not say"}:
             if field.get("required", False):
                 return _save_and_return(state, history, user_message, f"{field.get('label', 'This information')} is required to submit the ticket. Could you provide it?", ticket_created=False, awaiting_custom_field=True, conversation_status="collecting_ticket_information")
@@ -2214,13 +2296,52 @@ def chat(data: dict):
                 )
             pending_ticket.pop("intake_stage", None)
             pending_ticket["step"] = "additional_details"
-            next_question = _first_investigation_question(
-                pending_ticket.get("original_complaint")
-            )
+            initial_complaint = (
+                pending_ticket.get("original_complaint") or ""
+            ).strip()
+            if initial_complaint:
+                domain_result = _check_company_domain(
+                    initial_complaint, history, state.get("company_id")
+                )
+                domain_decision = domain_result.get("decision", "UNCERTAIN")
+                print("INITIAL-CONTACT COMPLAINT DOMAIN DECISION:", domain_decision)
+                if domain_decision == "OUT_OF_DOMAIN":
+                    state.pop("pending_ticket", None)
+                    return _save_and_return(
+                        state, history, user_message, _domain_rejection_message(),
+                        ticket_created=False,
+                        conversation_status="out_of_domain",
+                        response_source="company_domain_validation",
+                    )
+                try:
+                    intent_result, intervention_result = _classify_issue(
+                        initial_complaint
+                    )
+                except Exception as exc:
+                    print(f"Initial-contact complaint classification failed: {exc}")
+                    return _save_and_return(
+                        state, history, user_message,
+                        "I couldn't assess the issue just now. Could you describe it once more?",
+                        ticket_created=False,
+                        conversation_status="complaint_validation_error",
+                    )
+                state["last_customer_complaint"] = initial_complaint
+                state["last_customer_intent"] = intent_result["intent"]
+                state["last_intervention"] = intervention_result["intervention"]
+                state["last_intervention_confidence"] = intervention_result["confidence"]
+                return _start_ticket_collection(
+                    state, history, user_message, initial_complaint,
+                    intent_result["intent"], intervention_result["intervention"],
+                    intervention_result["confidence"],
+                    _first_investigation_question(initial_complaint),
+                )
+            pending_ticket["step"] = "human_support_issue_details"
             return _save_and_return(
-                state, history, user_message, next_question,
+                state, history, user_message,
+                "Thanks. What happened with the product, order, or service?",
                 ticket_created=False,
-                conversation_status="collecting_additional_details",
+                awaiting_issue_details=True,
+                conversation_status="collecting_support_issue",
                 response_source="ticket_information_collection",
             )
         pending_ticket["step"] = "additional_details"
@@ -3662,6 +3783,80 @@ def chat(data: dict):
                 _first_investigation_question(complaint),
             )
 
+        normalized_email_turn = re.sub(
+            r"\\s+", " ", user_message.lower()
+        ).strip()
+        looks_like_question = (
+            "?" in user_message
+            or bool(re.match(
+                r"^(?:do|does|did|can|could|would|what|which|who|where|when|why|how|is|are|am|tell me|show me)\\b",
+                normalized_email_turn,
+            ))
+        )
+        is_side_question = (
+            semantic_category in {"SMALL_TALK", "GENERAL_QUESTION", "PRODUCT_ENQUIRY"}
+            or looks_like_question
+        )
+        is_issue_description = (
+            semantic_category in {"CUSTOMER_ISSUE", "FOLLOW_UP_ISSUE"}
+            or bool(re.search(
+                r"\\b(not delivered|not shipped|not dispatched|not received|"
+                r"payment|refund|damaged|broken|not working|order problem|"
+                r"delivery problem|issue with my|problem with my)\\b",
+                normalized_email_turn,
+            ))
+        )
+        if is_side_question:
+            side_intent = (
+                "business_enquiry"
+                if semantic_category == "PRODUCT_ENQUIRY"
+                else "general_enquiry"
+            )
+            try:
+                side_reply = generate_llm_response(
+                    customer_message=user_message,
+                    intent=side_intent,
+                    conversation_history=history,
+                    company_id=state.get("company_id"),
+                )
+                side_reply = (side_reply or "").strip()
+                if not side_reply:
+                    raise ValueError("Empty side-question response")
+            except Exception as exc:
+                print(f"Email-collection side-question response failed: {exc}")
+                side_reply = "I can help with that question."
+            return _save_and_return(
+                state, history, user_message,
+                side_reply + "\\n\\nWhen you're ready, please provide your email address so the support team can contact you.",
+                ticket_created=False,
+                awaiting_email=True,
+                conversation_status="collecting_customer_email",
+                response_source="side_question_during_contact_collection",
+            )
+        if is_issue_description:
+            generic_issue = normalized_email_turn in {
+                "i have some issue", "i have somme issue", "i have an issue",
+                "i have a problem", "i have some problem", "some issue",
+                "some problem", "an issue", "a problem",
+            }
+            if not generic_issue:
+                if not pending_ticket.get("original_complaint"):
+                    pending_ticket["original_complaint"] = user_message
+                    pending_ticket["issue_summary"] = user_message
+                else:
+                    pending_ticket.setdefault("detail_messages", []).append(user_message)
+                    pending_ticket["additional_details"] = "\\n".join(
+                        pending_ticket["detail_messages"]
+                    )
+            return _save_and_return(
+                state, history, user_message,
+                "I can continue with your support request. Please provide your email address so the team can contact you.",
+                ticket_created=False,
+                awaiting_email=True,
+                conversation_status="collecting_customer_email",
+                response_source="required_field_first_intake",
+            )
+
         if semantic_human_request:
             reply = (
                 "Your support request is ready for human follow-up. "
@@ -3856,31 +4051,46 @@ def chat(data: dict):
             or topic_only_statement
         )
     ):
-        if "payment" in normalized_issue_message or "billing" in normalized_issue_message:
-            reply = (
-                "Understood — this is about payment. What exactly happened? "
-                "For example, was the payment declined, was money deducted "
-                "without confirmation, or were you charged more than once?"
-            )
-        else:
-            reply = (
-                "I can help with that. What exactly happened? "
-                "Please describe what you were trying to do and what went wrong."
+        # A vague but explicit issue statement starts ticket intake.
+        # Collect configured global contact fields first; do not run
+        # company-domain validation until the customer describes the issue.
+        existing_pending = state.get("pending_ticket") or {}
+        pending_ticket = {
+            **existing_pending,
+            "customer_email": (
+                existing_pending.get("customer_email")
+                or state.get("customer_email")
+            ),
+            "original_complaint": existing_pending.get("original_complaint") or "",
+            "issue_summary": existing_pending.get("issue_summary") or "",
+            "additional_details": existing_pending.get("additional_details", ""),
+            "detail_messages": existing_pending.get("detail_messages", []),
+            "asked_questions": existing_pending.get("asked_questions", []),
+            "intent": existing_pending.get("intent") or "general_enquiry",
+            "intervention": existing_pending.get("intervention") or "AI_ASSISTED_HUMAN_REQUIRED",
+            "intervention_confidence": existing_pending.get("intervention_confidence") or 0.75,
+            "custom_fields": existing_pending.get("custom_fields", {}),
+            "step": "collecting_custom_fields",
+            "intake_stage": "initial_contact",
+        }
+        state["pending_ticket"] = pending_ticket
+        first_global_field = _next_missing_global_ticket_field(
+            pending_ticket, state.get("company_id")
+        )
+        print("VAGUE COMPLAINT: starting required-field-first intake")
+        if first_global_field:
+            return _ask_for_ticket_field(
+                state, history, user_message, pending_ticket, first_global_field
             )
 
-        print(
-            "VAGUE COMPLAINT CLARIFICATION:",
-            normalized_issue_message,
-        )
+        pending_ticket["step"] = "human_support_issue_details"
         return _save_and_return(
-            state,
-            history,
-            user_message,
-            reply,
+            state, history, user_message,
+            "I can help with that. What happened?",
             ticket_created=False,
             awaiting_issue_details=True,
-            conversation_status="clarifying_complaint",
-            response_source="vague_complaint_clarification",
+            conversation_status="collecting_support_issue",
+            response_source="ticket_information_collection",
         )
             # ------------------------------------------------
 
