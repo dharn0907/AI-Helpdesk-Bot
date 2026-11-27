@@ -34,6 +34,7 @@ export default function AdminDashboard({ onBack, session, chatbot }) {
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [selectedFile, setSelectedFile] = useState(null);
+  const [selectedKnowledgeType, setSelectedKnowledgeType] = useState("general");
   const [knowledgeFiles, setKnowledgeFiles] = useState([]);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -606,6 +607,7 @@ export default function AdminDashboard({ onBack, session, chatbot }) {
     try {
       const formData = new FormData();
       formData.append("file", selectedFile);
+      formData.append("knowledge_type", selectedKnowledgeType);
 
       const response = await fetch(`${API}/knowledge-base/upload`, {
         method: "POST",
@@ -623,6 +625,7 @@ export default function AdminDashboard({ onBack, session, chatbot }) {
       );
 
       setSelectedFile(null);
+      setSelectedKnowledgeType("general");
 
       const fileInput = document.getElementById("knowledge-file-input");
       if (fileInput) fileInput.value = "";
@@ -1277,8 +1280,24 @@ export default function AdminDashboard({ onBack, session, chatbot }) {
                 marginBottom: 20
               }}>
                 <h3 style={{ fontSize: 15, marginTop: 0 }}>
-                  Upload Company Data
+                  Upload Knowledge Base Data
                 </h3>
+
+                <p style={{ fontSize: 13, color: "#6b7280" }}>
+                  Choose which knowledge collection this file belongs to. The chatbot retrieves only the matching collection for each intent. Existing uploaded files remain in General Knowledge.
+                </p>
+
+                <label style={{ display: "block", fontWeight: 600, fontSize: 13, marginBottom: 7 }}>
+                  Knowledge Base Type
+                </label>
+                <select
+                  value={selectedKnowledgeType}
+                  onChange={(e) => setSelectedKnowledgeType(e.target.value)}
+                  style={{ ...inputStyle, marginBottom: 14 }}
+                >
+                  <option value="general">General Knowledge — FAQs, products, services and business information</option>
+                  <option value="ticket">Ticket Knowledge — troubleshooting, complaints and support procedures</option>
+                </select>
 
                 <p style={{ fontSize: 13, color: "#6b7280" }}>
                   Supported formats: CSV and XLSX. Maximum file size: 10 MB.
@@ -1401,6 +1420,7 @@ export default function AdminDashboard({ onBack, session, chatbot }) {
                             margin: "5px 0"
                           }}>
                             {file.file_type.toUpperCase()} ·{" "}
+                            {(file.knowledge_type || "general") === "ticket" ? "Ticket Knowledge" : "General Knowledge"} ·{" "}
                             {file.row_count} records · {file.status}
                           </p>
 
