@@ -3770,20 +3770,20 @@ def chat(data: dict):
 
     # Policy/eligibility questions are informational, not ticket requests.
     # Route their factual lookup to the Ticket KB without starting intake.
-    normalized_customer_turn = re.sub(r"\\s+", " ", user_message.lower()).strip()
+    normalized_customer_turn = re.sub(r"\s+", " ", user_message.lower()).strip()
     policy_knowledge_type = None
     return_policy_question = bool(re.search(
-        r"\\b(?:can|could|may|am i|is it possible|would i be able to|"
-        r"what is|what's|tell me about|explain)\\b.{0,120}\\b"
-        r"(?:return|refund|exchange|replace|replacement|warranty)\\b|"
-        r"\\b(?:return|refund|exchange|replacement|warranty)\\s+"
-        r"(?:policy|window|period|eligibility|rules|conditions)\\b",
+        r"\b(?:can|could|may|am i|is it possible|would i be able to|"
+        r"what is|what's|tell me about|explain)\b.{0,120}\b"
+        r"(?:return|refund|exchange|replace|replacement|warranty)\b|"
+        r"\b(?:return|refund|exchange|replacement|warranty)\s+"
+        r"(?:policy|window|period|eligibility|rules|conditions)\b",
         normalized_customer_turn,
     ))
     return_problem_reported = bool(re.search(
-        r"\\b(damaged|defective|faulty|broken|cracked|wrong item|"
+        r"\b(damaged|defective|faulty|broken|cracked|wrong item|"
         r"missing|not working|doesn't work|does not work|failed|"
-        r"problem|issue|poor quality)\\b",
+        r"problem|issue|poor quality)\b",
         normalized_customer_turn,
     ))
     if return_policy_question and not return_problem_reported:
