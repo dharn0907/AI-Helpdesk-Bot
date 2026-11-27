@@ -1,4 +1,5 @@
 import json
+import re
 
 from services.llm_service import (
     llm,
@@ -84,12 +85,17 @@ CORRECTIONS, REVERSED ASSUMPTIONS, AND CONTRADICTORY FACTS (HIGHEST PRIORITY):
 - Compare the latest statement with BOTH the customer's earlier facts and
   the assumptions embedded in the assistant's previous question.
 - Example: the customer first says an order has not arrived, is asked for an
-  order ID, then says "I don't have one; I haven't placed it yet". This
-  conflicts with the implied/earlier claim that an order was placed. Do NOT
-  ask for an order ID again, do NOT silently discard the support context, and
-  do NOT switch to a generic greeting. Mark the conflict and ask whether the
-  customer is asking a pre-purchase question or whether an order was actually
-  placed and has not arrived.
+  order ID, then says "No, I didn't place an order". This conflicts with the
+  earlier claim that an order was not received. Unless the customer explicitly
+  says the earlier statement was a mistake, this is NOT yet a resolved
+  correction. You MUST set action=ADD_DETAIL, include a contradiction, set
+  needs_clarification=true and ask exactly:
+  "Just to clarify: earlier you mentioned that your order hadn't arrived, but
+  now you've said you haven't placed an order. Did you mean that you haven't
+  placed an order yet, or that you placed one but haven't received it?"
+  Do NOT ask what product they want to buy yet. Wait for the customer's
+  answer before switching to a pre-purchase enquiry or continuing delivery
+  investigation. Do NOT create a ticket during this clarification.
 - If the latest statement clearly corrects the earlier fact, accept the
   corrected fact, list it in corrections, update the summary, and do not
   preserve the obsolete fact as true.
@@ -525,6 +531,49 @@ For non-issue messages, do not modify the existing issue information.
     needs_clarification = (
         result.get("needs_clarification") is True
     )
+
+    # Deterministic safeguard for a direct contradiction between an
+    # earlier undelivered-order complaint and a later statement that no
+    # order was placed. The LLM must not silently resolve this ambiguity.
+    earlier_delivery_claim = bool(
+        re.search(
+            r"\\b(order|delivery|shipment)\\b.{0,100}\\b("
+            r"not received|never received|haven't received|have not received|"
+            r"hasn't arrived|has not arrived|not arrived|still waiting"
+            r")\\b|\\b("
+            r"not received|never received|haven't received|have not received|"
+            r"hasn't arrived|has not arrived|not arrived|still waiting"
+            r").{0,100}\\b(order|delivery|shipment)\\b",
+            original_complaint,
+            re.IGNORECASE,
+        )
+    )
+    latest_denies_purchase = bool(
+        re.search(
+            r"\\b(didn'?t|did not|haven't|have not|never)\\b"
+            r".{0,35}\\b(place|placed|buy|bought|purchase|purchased|order)\\b",
+            customer_message,
+            re.IGNORECASE,
+        )
+    )
+    if earlier_delivery_claim and latest_denies_purchase:
+        action = "ADD_DETAIL"
+        relevant_details = customer_message.strip()
+        issue_summary = existing_summary or original_complaint
+        contradictions = [
+            "Customer previously reported an order had not arrived, "
+            "but now says they did not place an order."
+        ]
+        corrections = []
+        information_complete = False
+        needs_clarification = True
+        clarification_question = (
+            "Just to clarify: earlier you mentioned that your order hadn't "
+            "arrived, but now you've said you haven't placed an order. "
+            "Did you mean that you haven't placed an order yet, or that you "
+            "placed one but haven't received it?"
+        )
+        result["resolves_pending_contradiction"] = False
 
     # Keep semantic contradictions inside the active ticket-investigation
     # path. Without this normalization, a model response that correctly
