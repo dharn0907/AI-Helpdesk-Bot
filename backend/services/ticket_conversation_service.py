@@ -75,6 +75,39 @@ CONVERSATION HISTORY:
 LATEST CUSTOMER MESSAGE:
 {customer_message}
 
+CORRECTIONS, REVERSED ASSUMPTIONS, AND CONTRADICTORY FACTS (HIGHEST PRIORITY):
+- Treat the customer's latest statement as potentially correcting an earlier
+  assumption or statement. Understand what the customer is correcting, not
+  just the literal words in the latest message.
+- A correction can be explicit ("No, I haven't placed an order") or
+  conversational ("I meant before buying", "not that one", "actually...").
+- Compare the latest statement with BOTH the customer's earlier facts and
+  the assumptions embedded in the assistant's previous question.
+- Example: the customer first says an order has not arrived, is asked for an
+  order ID, then says "I don't have one; I haven't placed it yet". This
+  conflicts with the implied/earlier claim that an order was placed. Do NOT
+  ask for an order ID again, do NOT silently discard the support context, and
+  do NOT switch to a generic greeting. Mark the conflict and ask whether the
+  customer is asking a pre-purchase question or whether an order was actually
+  placed and has not arrived.
+- If the latest statement clearly corrects the earlier fact, accept the
+  corrected fact, list it in corrections, update the summary, and do not
+  preserve the obsolete fact as true.
+- If both statements cannot be true and the customer has not clearly said
+  which one is correct, populate contradictions, set needs_clarification=true,
+  and provide one short clarification_question that distinguishes the
+  possibilities. Preserve the existing complaint until clarified.
+- If the new message means the customer has not purchased/placed/booked/
+  subscribed yet, distinguish a pre-purchase enquiry from a problem with an
+  existing transaction. Do not invent an order or create a support ticket
+  for a purchase that has not happened.
+- A side question does not erase the active issue. A clear change of topic
+  may pause it, but retain the collected details unless the customer
+  explicitly cancels the support request.
+- A negative answer to a request for an identifier ("I don't have an order
+  number") is not by itself proof that no order exists. Use the rest of the
+  customer's sentence and conversation history to determine the meaning.
+
 FIRST: CLASSIFY THE CUSTOMER'S MESSAGE.
 
 Choose exactly one action:
@@ -492,6 +525,25 @@ For non-issue messages, do not modify the existing issue information.
     needs_clarification = (
         result.get("needs_clarification") is True
     )
+
+    # Keep semantic contradictions inside the active ticket-investigation
+    # path. Without this normalization, a model response that correctly
+    # detects a conflict but labels the action UNCERTAIN can fall through to
+    # ordinary chat and lose the customer's pending support context.
+    if contradictions and action not in {
+        "GREETING", "SIDE_QUESTION", "UNRELATED", "PAUSE", "CANCEL"
+    }:
+        action = "ADD_DETAIL"
+        needs_clarification = True
+        information_complete = False
+        if not clarification_question:
+            clarification_question = (
+                "I may have misunderstood one detail. Did you mean that "
+                "you haven't placed an order yet, or that you placed one "
+                "but it hasn't arrived?"
+            )
+        if not issue_summary:
+            issue_summary = existing_summary or original_complaint
 
     if action in {
         "GREETING",
