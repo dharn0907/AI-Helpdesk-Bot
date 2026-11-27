@@ -3,7 +3,7 @@ import uuid
 from pathlib import Path
 
 import pandas as pd
-from fastapi import APIRouter, Depends, File, Header, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
 from database.database import get_db
@@ -96,10 +96,18 @@ def read_spreadsheet(file_path, extension):
 @router.post("/upload")
 async def upload_knowledge_file(
     file: UploadFile = File(...),
+    knowledge_type: str = Form(default="general"),
     db: Session = Depends(get_db),
     authorization: str = Header(default=None),
     x_company_id: int = Header(default=None, alias="X-Company-ID"),
 ):
+    knowledge_type = str(knowledge_type or "general").strip().lower()
+    if knowledge_type not in {"general", "ticket"}:
+        raise HTTPException(
+            status_code=400,
+            detail="Knowledge type must be 'general' or 'ticket'.",
+        )
+
     original_name = Path(file.filename or "").name
     extension = Path(original_name).suffix.lower()
 
@@ -136,6 +144,7 @@ async def upload_knowledge_file(
             original_filename=original_name,
             stored_filename=stored_filename,
             file_type=extension.lstrip("."),
+            knowledge_type=knowledge_type,
             row_count=len(records),
             status="processed",
         )
@@ -206,6 +215,7 @@ def list_knowledge_files(
                 "id": item.id,
                 "filename": item.original_filename,
                 "file_type": item.file_type,
+                "knowledge_type": getattr(item, "knowledge_type", "general") or "general",
                 "row_count": item.row_count,
                 "status": item.status,
                 "created_at": (
