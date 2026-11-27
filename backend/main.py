@@ -2182,11 +2182,11 @@ def chat(data: dict):
             field.get("type") == "email" or field_key == "email"
         )
         if is_contact_email_field and not valid_email(value):
-            normalized_value = re.sub(r"\\s+", " ", value.lower()).strip()
+            normalized_value = re.sub(r"\s+", " ", value.lower()).strip()
             looks_like_question = (
                 "?" in value
                 or bool(re.match(
-                    r"^(?:do|does|did|can|could|would|what|which|who|where|when|why|how|is|are|am|tell me|show me)\\b",
+                    r"^(?:do|does|did|can|could|would|what|which|who|where|when|why|how|is|are|am|tell me|show me)\b",
                     normalized_value,
                 ))
             )
@@ -2197,9 +2197,9 @@ def chat(data: dict):
             is_issue_description = (
                 semantic_category in {"CUSTOMER_ISSUE", "FOLLOW_UP_ISSUE"}
                 or bool(re.search(
-                    r"\\b(not delivered|not shipped|not dispatched|not received|"
+                    r"\b(not delivered|not shipped|not dispatched|not received|"
                     r"payment|refund|damaged|broken|not working|order problem|"
-                    r"delivery problem|issue with my|problem with my)\\b",
+                    r"delivery problem|issue with my|problem with my)\b",
                     normalized_value,
                 ))
             )
@@ -2227,7 +2227,7 @@ def chat(data: dict):
                 )
                 return _save_and_return(
                     state, history, user_message,
-                    side_reply + "\\n\\nWhen you're ready, " + question[0].lower() + question[1:],
+                    side_reply + "\n\nWhen you're ready, " + question[0].lower() + question[1:],
                     ticket_created=False,
                     awaiting_custom_field=True,
                     required_field=field_key,
@@ -2246,7 +2246,7 @@ def chat(data: dict):
                         pending_ticket["issue_summary"] = value
                     else:
                         pending_ticket.setdefault("detail_messages", []).append(value)
-                        pending_ticket["additional_details"] = "\\n".join(
+                        pending_ticket["additional_details"] = "\n".join(
                             pending_ticket["detail_messages"]
                         )
                 question = (field.get("prompt") or "").strip() or (
@@ -3784,12 +3784,12 @@ def chat(data: dict):
             )
 
         normalized_email_turn = re.sub(
-            r"\\s+", " ", user_message.lower()
+            r"\s+", " ", user_message.lower()
         ).strip()
         looks_like_question = (
             "?" in user_message
             or bool(re.match(
-                r"^(?:do|does|did|can|could|would|what|which|who|where|when|why|how|is|are|am|tell me|show me)\\b",
+                r"^(?:do|does|did|can|could|would|what|which|who|where|when|why|how|is|are|am|tell me|show me)\b",
                 normalized_email_turn,
             ))
         )
@@ -3800,9 +3800,9 @@ def chat(data: dict):
         is_issue_description = (
             semantic_category in {"CUSTOMER_ISSUE", "FOLLOW_UP_ISSUE"}
             or bool(re.search(
-                r"\\b(not delivered|not shipped|not dispatched|not received|"
+                r"\b(not delivered|not shipped|not dispatched|not received|"
                 r"payment|refund|damaged|broken|not working|order problem|"
-                r"delivery problem|issue with my|problem with my)\\b",
+                r"delivery problem|issue with my|problem with my)\b",
                 normalized_email_turn,
             ))
         )
@@ -3827,7 +3827,7 @@ def chat(data: dict):
                 side_reply = "I can help with that question."
             return _save_and_return(
                 state, history, user_message,
-                side_reply + "\\n\\nWhen you're ready, please provide your email address so the support team can contact you.",
+                side_reply + "\n\nWhen you're ready, please provide your email address so the support team can contact you.",
                 ticket_created=False,
                 awaiting_email=True,
                 conversation_status="collecting_customer_email",
@@ -3845,7 +3845,7 @@ def chat(data: dict):
                     pending_ticket["issue_summary"] = user_message
                 else:
                     pending_ticket.setdefault("detail_messages", []).append(user_message)
-                    pending_ticket["additional_details"] = "\\n".join(
+                    pending_ticket["additional_details"] = "\n".join(
                         pending_ticket["detail_messages"]
                     )
             return _save_and_return(
