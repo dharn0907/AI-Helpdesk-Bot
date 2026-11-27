@@ -1387,70 +1387,130 @@ export default function AdminDashboard({ onBack, session, chatbot }) {
                   </p>
                 ) : (
                   <div style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: 10
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+                    gap: 16,
+                    marginTop: 12
                   }}>
-                    {knowledgeFiles.map((file) => (
-                      <div
-                        key={file.id}
-                        style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          alignItems: "center",
-                          gap: 12,
-                          flexWrap: "wrap",
-                          padding: 14,
-                          border: "1px solid #e5e7eb",
-                          borderRadius: 9
-                        }}
-                      >
-                        <div style={{ flex: "1 1 200px" }}>
-                          <strong style={{
-                            display: "block",
-                            fontSize: 14,
-                            overflowWrap: "anywhere"
-                          }}>
-                            {file.filename}
-                          </strong>
+                    {[
+                      {
+                        type: "general",
+                        title: "General Knowledge Files",
+                        description: "Company information, products, services and FAQs."
+                      },
+                      {
+                        type: "ticket",
+                        title: "Ticket Knowledge Files",
+                        description: "Support procedures, troubleshooting and ticket policies."
+                      }
+                    ].map((group) => {
+                      const groupFiles = knowledgeFiles.filter(
+                        (file) => (file.knowledge_type || "general") === group.type
+                      );
 
+                      return (
+                        <div
+                          key={group.type}
+                          style={{
+                            border: "1px solid #e5e7eb",
+                            borderRadius: 10,
+                            padding: 14,
+                            background: "#fafafa",
+                            minWidth: 0
+                          }}
+                        >
+                          <h4 style={{ fontSize: 15, margin: "0 0 5px" }}>
+                            {group.title}
+                          </h4>
                           <p style={{
                             color: "#6b7280",
                             fontSize: 12,
-                            margin: "5px 0"
+                            margin: "0 0 12px"
                           }}>
-                            {file.file_type.toUpperCase()} ·{" "}
-                            {(file.knowledge_type || "general") === "ticket" ? "Ticket Knowledge" : "General Knowledge"} ·{" "}
-                            {file.row_count} records · {file.status}
+                            {group.description}
                           </p>
 
-                          {file.created_at && (
+                          {groupFiles.length === 0 ? (
                             <p style={{
                               color: "#9ca3af",
-                              fontSize: 11,
+                              fontSize: 13,
+                              padding: 12,
+                              background: "#fff",
+                              borderRadius: 8,
                               margin: 0
                             }}>
-                              Uploaded:{" "}
-                              {new Date(file.created_at).toLocaleString()}
+                              No {group.type === "ticket" ? "ticket" : "general"} knowledge files uploaded.
                             </p>
+                          ) : (
+                            <div style={{
+                              display: "flex",
+                              flexDirection: "column",
+                              gap: 10
+                            }}>
+                              {groupFiles.map((file) => (
+                                <div
+                                  key={file.id}
+                                  style={{
+                                    display: "flex",
+                                    justifyContent: "space-between",
+                                    alignItems: "center",
+                                    gap: 12,
+                                    flexWrap: "wrap",
+                                    padding: 12,
+                                    border: "1px solid #e5e7eb",
+                                    borderRadius: 9,
+                                    background: "#fff"
+                                  }}
+                                >
+                                  <div style={{ flex: "1 1 150px", minWidth: 0 }}>
+                                    <strong style={{
+                                      display: "block",
+                                      fontSize: 14,
+                                      overflowWrap: "anywhere"
+                                    }}>
+                                      {file.filename}
+                                    </strong>
+
+                                    <p style={{
+                                      color: "#6b7280",
+                                      fontSize: 12,
+                                      margin: "5px 0"
+                                    }}>
+                                      {file.file_type.toUpperCase()} · {file.row_count} records · {file.status}
+                                    </p>
+
+                                    {file.created_at && (
+                                      <p style={{
+                                        color: "#9ca3af",
+                                        fontSize: 11,
+                                        margin: 0
+                                      }}>
+                                        Uploaded:{" "}
+                                        {new Date(file.created_at).toLocaleString()}
+                                      </p>
+                                    )}
+                                  </div>
+
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      deleteKnowledgeFile(file.id, file.filename)
+                                    }
+                                    style={{
+                                      ...buttonStyle,
+                                      background: "#dc2626",
+                                      padding: "8px 13px"
+                                    }}
+                                  >
+                                    Delete
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
                           )}
                         </div>
-
-                        <button
-                          type="button"
-                          onClick={() =>
-                            deleteKnowledgeFile(file.id, file.filename)
-                          }
-                          style={{
-                            ...buttonStyle,
-                            background: "#dc2626",
-                            padding: "8px 13px"
-                          }}
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
