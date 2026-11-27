@@ -3091,6 +3091,41 @@ def chat(data: dict):
             )
 
 
+        # A semantic correction may need clarification even when the model
+        # does not populate a contradiction list. Keep the active ticket state
+        # and ask the clarification instead of treating the message as a new
+        # detail or falling through to generic chat.
+        if (
+            interpretation.get("needs_clarification") is True
+            and action not in {"GREETING", "SIDE_QUESTION", "UNRELATED", "PAUSE", "CANCEL"}
+        ):
+            clarification = (
+                interpretation.get("clarification_question") or ""
+            ).strip()
+            if not clarification:
+                clarification = (
+                    "I want to make sure I understood correctly. "
+                    "Could you clarify which of those details is correct?"
+                )
+
+            detected_conflicts = interpretation.get("contradictions") or [
+                "The latest message may correct or conflict with an earlier detail."
+            ]
+            pending_ticket["pending_contradictions"] = detected_conflicts
+            pending_ticket["pending_correction"] = (
+                interpretation.get("relevant_details") or user_message
+            ).strip()
+
+            return _save_and_return(
+                state,
+                history,
+                user_message,
+                clarification,
+                ticket_created=False,
+                awaiting_additional_details=True,
+                conversation_status="clarifying_contradiction",
+            )
+
         if action == "ADD_DETAIL":
             relevant_detail = (
                 interpretation.get("relevant_details") or ""
